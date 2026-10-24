@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release/
+*.log
+Thumbs.db
+.env
+.env.*
+release_new/
+.claude/
