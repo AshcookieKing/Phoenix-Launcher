@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('phoenix', {
   menuPairCancel: () => ipcRenderer.invoke('menu-pair-cancel'),
   menuLogout: () => ipcRenderer.invoke('menu-logout'),
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
+  tsConnect: () => ipcRenderer.invoke('ts-connect'),
   openFolder: (p) => ipcRenderer.invoke('open-folder', p),
   autoDetectPaths: () => ipcRenderer.invoke('auto-detect-paths'),
   pickArmaExe: () => ipcRenderer.invoke('pick-arma-exe'),

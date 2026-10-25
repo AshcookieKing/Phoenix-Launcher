@@ -12,6 +12,7 @@ const { queryServer } = require('./a2s.cjs');
 const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
 const { SERVERS, LINKS } = require('./phx-config.cjs');
+const { connectTeamSpeak } = require('./teamspeak.cjs');
 
 const APP_VERSION = require('../package.json').version;
 
@@ -355,7 +356,7 @@ ipcMain.handle('launch', async (event, { serverId = null } = {}) => {
     if (result.ok) {
       watchGameProcess(result.pid);
       // TeamSpeak вместе с игрой (настройка «Подключаться к TeamSpeak при запуске игры»)
-      if (store.get('tsAutoConnect') === true) shell.openExternal(LINKS.teamspeak).catch(() => {});
+      if (store.get('tsAutoConnect') === true) tsConnect(false);
       if (store.get('minimizeOnLaunch') !== false) setTimeout(() => mainWindow?.minimize(), 800);
     }
     return result;
@@ -419,6 +420,26 @@ ipcMain.handle('menu-pair-cancel', () => {
   stopPairPolling();
   return { ok: true };
 });
+
+// TeamSpeak 3 сразу на сервере Phoenix; нет клиента - предложить скачать (askIfMissing)
+async function tsConnect(askIfMissing = true) {
+  const res = connectTeamSpeak(LINKS.teamspeak);
+  if (res.ok || !askIfMissing) return res;
+  const r = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'TeamSpeak 3',
+    message: 'TeamSpeak 3 не найден',
+    detail: `Рация в игре (TFAR) работает только с TeamSpeak 3. Установите его и нажмите кнопку ещё раз.
+Сервер: ${LINKS.teamspeakHost}`,
+    buttons: ['Скачать TeamSpeak 3', 'Закрыть'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (r.response === 0) shell.openExternal('https://www.teamspeak.com/en/downloads/#ts3client');
+  return res;
+}
+
+ipcMain.handle('ts-connect', () => tsConnect(true));
 
 ipcMain.handle('open-url', (_, url) => {
   if (/^(https?|steam|ts3server):\/\//i.test(String(url || ''))) shell.openExternal(url);

@@ -36,7 +36,7 @@ export default function TitleBar({ view, onView, links, api }) {
           <IconDiscord size={16} />
           <span>Discord</span>
         </button>
-        <button type="button" className="chip-btn" onClick={() => api.openUrl(links.teamspeak)} title={`TeamSpeak Phoenix: ${links.teamspeakHost}`}>
+        <button type="button" className="chip-btn" onClick={() => api.tsConnect()} title={`TeamSpeak Phoenix: ${links.teamspeakHost}`}>
           <IconHeadset size={16} />
           <span>TeamSpeak</span>
         </button>

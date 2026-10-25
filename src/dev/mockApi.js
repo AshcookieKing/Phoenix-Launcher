@@ -48,6 +48,7 @@ window.phoenix = {
   menuPairStart: async () => ({ ok: true, code: 'K7M2QX', url: '#' }),
   menuPairCancel: async () => ({ ok: true }),
   menuLogout: async () => ({ ok: false, noToken: true }),
+  tsConnect: async () => ({ ok: true }),
   openUrl: async () => {}, openFolder: async () => {},
   autoDetectPaths: async () => ({ success: false, errors: ['Не найдено'] }),
   pickArmaExe: async () => ({ canceled: true }), pickWorkshopFolder: async () => ({ canceled: true }),
