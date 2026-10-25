@@ -28,6 +28,9 @@ module.exports = {
   MENU_LOGIN_URL: `http://${PHX_HOST}:5003/phx/menu/login?code=`,
   LINKS: {
     discord: 'https://discord.gg/5FgEANx7Yu',
+    // TeamSpeak Phoenix (TFAR): клиент TS3 открывается сразу на сервере
+    teamspeak: 'ts3server://phoenixrparma3.ts3.so',
+    teamspeakHost: 'phoenixrparma3.ts3.so',
     progression: `http://${PHX_HOST}:8090/`,
     workshopMod: 'https://steamcommunity.com/sharedfiles/filedetails/?id=3821631465',
   },

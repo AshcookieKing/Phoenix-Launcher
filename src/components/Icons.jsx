@@ -164,6 +164,13 @@ export const IconUser = make(
   </>
 );
 
+export const IconHeadset = make(
+  <>
+    <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+    <path d="M4 14.5a1.5 1.5 0 0 1 1.5-1.5H7v6H5.5A1.5 1.5 0 0 1 4 17.5v-3ZM20 14.5a1.5 1.5 0 0 0-1.5-1.5H17v6h1.5a1.5 1.5 0 0 0 1.5-1.5v-3Z" />
+  </>
+);
+
 export function IconDiscord({ size = 18, ...rest }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden {...rest}>

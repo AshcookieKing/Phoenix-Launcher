@@ -16,7 +16,7 @@ const mods = [
 const settings = {
   armaExe: 'D:/SteamLibrary/steamapps/common/Arma 3/arma3_x64.exe',
   workshopDir: 'D:/SteamLibrary/steamapps/workshop/content/107410',
-  screenMode: 'borderless', optimizedLaunch: false, performancePreset: 'high', extraLaunchArgs: '', skipLogos: false,
+  screenMode: 'borderless', optimizedLaunch: false, tsAutoConnect: false, performancePreset: 'high', extraLaunchArgs: '', skipLogos: false,
   activeProfileId: '', soundsEnabled: true, minimizeOnLaunch: true, animationsEnabled: true,
   appVersion: '1.0.0', presetPath: 'preset/phoenix_preset.html', customPreset: false, modCount: 35,
   paths: { armaExe: 'D:/SteamLibrary/steamapps/common/Arma 3/arma3_x64.exe', workshopDir: 'D:/SteamLibrary/steamapps/workshop/content/107410', pathsValid: true },
@@ -26,7 +26,7 @@ const settings = {
     { id: 'farabad', name: 'Фарабад', tag: 'ФРОНТ', subtitle: 'Война с КНС · ALiVE · опорники и щиты', host: '109.248.4.45', port: 2302 },
     { id: 'kamino', name: 'Камино', tag: 'УЧЕБНЫЙ ХАБ', subtitle: 'Обучение клонов · симуляции · рекорды', host: '109.248.4.45', port: 2402 },
   ],
-  links: { discord: '#', progression: '#', workshopMod: '#' },
+  links: { discord: '#', teamspeak: '#', teamspeakHost: 'phoenixrparma3.ts3.so', progression: '#', workshopMod: '#' },
 };
 const linked = !new URLSearchParams(location.search).get('unlinked');
 const account = {

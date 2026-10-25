@@ -20,7 +20,7 @@ app.setName('PhoenixLauncher');
 
 const STORE_KEYS = new Set([
   'armaExe', 'steamPath', 'workshopDir', 'pathsConfigured', 'presetPath',
-  'screenMode', 'optimizedLaunch', 'keepLogs', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
+  'screenMode', 'optimizedLaunch', 'keepLogs', 'tsAutoConnect', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
   'activeProfileId', 'playerName', 'selectedServer', 'soundsEnabled', 'minimizeOnLaunch', 'animationsEnabled',
 ]);
 
@@ -35,6 +35,7 @@ const store = new Store({
     screenMode: 'borderless',
     optimizedLaunch: false,
     keepLogs: false,
+    tsAutoConnect: false,
     performancePreset: 'high',
     extraLaunchArgs: '',
     skipLogos: false,
@@ -149,6 +150,7 @@ function getConfig() {
     screenMode: store.get('screenMode') || 'borderless',
     optimizedLaunch: store.get('optimizedLaunch') === true,
     keepLogs: store.get('keepLogs') === true,
+    tsAutoConnect: store.get('tsAutoConnect') === true,
     performancePreset: store.get('performancePreset') || 'high',
     extraLaunchArgs: store.get('extraLaunchArgs'),
     skipLogos: store.get('skipLogos') === true,
@@ -352,6 +354,8 @@ ipcMain.handle('launch', async (event, { serverId = null } = {}) => {
     });
     if (result.ok) {
       watchGameProcess(result.pid);
+      // TeamSpeak вместе с игрой (настройка «Подключаться к TeamSpeak при запуске игры»)
+      if (store.get('tsAutoConnect') === true) shell.openExternal(LINKS.teamspeak).catch(() => {});
       if (store.get('minimizeOnLaunch') !== false) setTimeout(() => mainWindow?.minimize(), 800);
     }
     return result;
@@ -417,7 +421,7 @@ ipcMain.handle('menu-pair-cancel', () => {
 });
 
 ipcMain.handle('open-url', (_, url) => {
-  if (/^(https?|steam):\/\//i.test(String(url || ''))) shell.openExternal(url);
+  if (/^(https?|steam|ts3server):\/\//i.test(String(url || ''))) shell.openExternal(url);
   return { ok: true };
 });
 

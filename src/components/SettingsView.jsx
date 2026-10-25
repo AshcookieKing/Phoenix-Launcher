@@ -139,6 +139,12 @@ export default function SettingsView({ api, settings, onSave, onApplySettings })
             </div>
           )}
           <Toggle
+            checked={settings.tsAutoConnect === true}
+            onChange={(v) => set({ tsAutoConnect: v })}
+            label="Подключаться к TeamSpeak при запуске игры"
+            hint="phoenixrparma3.ts3.so — нужен установленный TeamSpeak 3"
+          />
+          <Toggle
             checked={settings.keepLogs === true}
             onChange={(v) => set({ keepLogs: v })}
             label="Писать лог игры (RPT)"
