@@ -1678,3 +1678,35 @@ kbd {
   font-size: 12px;
   line-height: 1.45;
 }
+.galaxy-site {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.galaxy-site iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: var(--radius);
+  background: #02040a;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.seg button {
+  padding: 0 14px;
+  font: 600 13px var(--font-ui);
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.seg button.is-on {
+  color: #1a0805;
+  background: var(--fire);
+}

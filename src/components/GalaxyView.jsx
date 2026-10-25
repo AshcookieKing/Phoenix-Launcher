@@ -3,6 +3,7 @@ import { IconExternal, IconMap, IconRefresh } from './Icons';
 
 // Общая галактика Phoenix (сайт :3005) и HoloNet. Данные приносит главный процесс (get-galaxy), обновление раз в 10 с.
 const REFRESH_MS = 10000;
+const MODE_KEY = 'phx-galaxy-mode';
 const COLORS = { Republic: '#4a90ff', CIS: '#ff4545', 'Hutt Cartel': '#ffd24a', Neutral: '#8a7d76' };
 const NAMES = { Republic: 'Республика', CIS: 'КНС', 'Hutt Cartel': 'Картель хаттов', Neutral: 'Нейтралы' };
 const KIND = { battle: 'Фронт', politics: 'Сенат', intrigue: 'Происшествие', finale: 'Финал войны', custom: 'Сводка' };
@@ -192,6 +193,23 @@ function GalaxyCanvas({ view, battlePlanets, onPickBattle }) {
 }
 
 export default function GalaxyView({ api, links }) {
+  // «Как на сайте» — сам сайт галактики во вкладке; «Сводка» — лёгкая схема (меньше нагрузки на слабых ПК)
+  const [mode, setModeState] = useState(() => {
+    try {
+      return localStorage.getItem(MODE_KEY) || 'site';
+    } catch {
+      return 'site';
+    }
+  });
+  const setMode = (m) => {
+    setModeState(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      /* ignore */
+    }
+  };
+  const [siteKey, setSiteKey] = useState(0);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -210,10 +228,11 @@ export default function GalaxyView({ api, links }) {
   }, [api]);
 
   useEffect(() => {
+    if (mode !== 'summary') return undefined;
     load();
     const id = setInterval(load, REFRESH_MS);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, mode]);
 
   const view = data?.view;
   const battles = data?.battles || [];
@@ -234,7 +253,20 @@ export default function GalaxyView({ api, links }) {
           </p>
         </div>
         <div className="page-actions">
-          <button type="button" className="btn btn-ghost" onClick={load} disabled={loading}>
+          <div className="seg">
+            <button type="button" className={mode === 'site' ? 'is-on' : ''} onClick={() => setMode('site')}>
+              Как на сайте
+            </button>
+            <button type="button" className={mode === 'summary' ? 'is-on' : ''} onClick={() => setMode('summary')}>
+              Сводка
+            </button>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => (mode === 'site' ? setSiteKey((k) => k + 1) : load())}
+            disabled={loading}
+          >
             <IconRefresh size={16} /> Обновить
           </button>
           <button type="button" className="btn btn-fire" onClick={() => api.openUrl(links.galaxy)}>
@@ -243,9 +275,15 @@ export default function GalaxyView({ api, links }) {
         </div>
       </div>
 
-      {error && !view && <div className="panel galaxy-error">{error}. Попробуйте позже.</div>}
+      {mode === 'site' && (
+        <section className="panel galaxy-site">
+          <iframe key={siteKey} src={links.galaxy} title="Галактика Phoenix" />
+        </section>
+      )}
 
-      {view && (
+      {mode === 'summary' && error && !view && <div className="panel galaxy-error">{error}. Попробуйте позже.</div>}
+
+      {mode === 'summary' && view && (
         <div className="galaxy-layout">
           <section className="panel galaxy-map">
             <GalaxyCanvas view={view} battlePlanets={battles.map((b) => b.planet)} onPickBattle={openBattle} />
