@@ -26,6 +26,37 @@ function isNewer(remote, local) {
   return false;
 }
 
+// Последний релиз без REST API GitHub (там лимит 60 запросов/час на IP — у игроков за общим NAT/VPN он кончается):
+// github.com/<repo>/releases/latest отвечает 302 на /releases/tag/vX.Y.Z, файл — /releases/latest/download/<ASSET>.
+function latestTag() {
+  return new Promise((resolve, reject) => {
+    const req = https.get(`https://github.com/${REPO}/releases/latest`, { headers: { 'User-Agent': UA }, timeout: 15000 }, (res) => {
+      res.resume();
+      const m = /\/releases\/tag\/([^/?#]+)/.exec(res.headers.location || '');
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && m) resolve(decodeURIComponent(m[1]));
+      else reject(new Error(`HTTP ${res.statusCode}`));
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
+
+async function latestRelease() {
+  try {
+    const tag = await latestTag();
+    return {
+      tag_name: tag,
+      html_url: `https://github.com/${REPO}/releases/tag/${tag}`,
+      body: '',
+      asset: { name: ASSET, size: 0, browser_download_url: `https://github.com/${REPO}/releases/download/${tag}/${ASSET}` },
+    };
+  } catch {
+    // запасной путь — REST API (даёт и описание релиза, но с лимитом)
+    const rel = await get(`https://api.github.com/repos/${REPO}/releases/latest`, { json: true });
+    return { ...rel, asset: (rel.assets || []).find((a) => a.name === ASSET) };
+  }
+}
+
 // GET с переходом по редиректам (ассеты GitHub отдаются через objects.githubusercontent.com)
 function get(url, { json = false, onData = null, file = null, hops = 0 } = {}) {
   return new Promise((resolve, reject) => {
@@ -101,8 +132,8 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
     busy = true;
     try {
       set({ state: 'checking', error: null });
-      const rel = await get(`https://api.github.com/repos/${REPO}/releases/latest`, { json: true });
-      const asset = (rel.assets || []).find((a) => a.name === ASSET);
+      const rel = await latestRelease();
+      const asset = rel.asset;
       if (!asset || !isNewer(rel.tag_name, appVersion)) {
         set({ state: 'none', latest: rel.tag_name, checkedAt: Date.now() });
         return status;
@@ -133,6 +164,7 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
     const res = await get(asset.browser_download_url, {
       file: tmp,
       onData: (got, total) => {
+        if (total) asset.size = asset.size || total;
         const pct = Math.floor(((total || asset.size) ? got / (total || asset.size) : 0) * 100);
         if (pct !== last) {
           last = pct;
@@ -140,7 +172,7 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
         }
       },
     });
-    if (asset.size && res.size !== asset.size) {
+    if ((asset.size && res.size !== asset.size) || res.size < 10 * 1024 * 1024) {
       fs.rmSync(tmp, { force: true });
       throw new Error('файл обновления скачался не полностью');
     }
