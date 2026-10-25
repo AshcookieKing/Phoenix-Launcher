@@ -1,14 +1,13 @@
-import { IconClose, IconDiscord, IconHeadset, IconHolo, IconHome, IconMinimize, IconMods, IconSettings, IconSystems } from './Icons';
+import { IconClose, IconDiscord, IconDownload, IconHeadset, IconHome, IconMinimize, IconMods, IconSettings, IconSystems } from './Icons';
 
 const TABS = [
   { id: 'home', label: 'Главная', Icon: IconHome },
   { id: 'mods', label: 'Моды', Icon: IconMods },
-  { id: 'galaxy', label: 'Галактика', Icon: IconHolo },
   { id: 'systems', label: 'Системы', Icon: IconSystems },
   { id: 'settings', label: 'Настройки', Icon: IconSettings },
 ];
 
-export default function TitleBar({ view, onView, links, api }) {
+export default function TitleBar({ view, onView, links, api, update }) {
   return (
     <header className="titlebar">
       <div className="brand">
@@ -33,6 +32,23 @@ export default function TitleBar({ view, onView, links, api }) {
       </nav>
 
       <div className="title-actions">
+        {update?.state === 'downloading' && (
+          <span className="chip-btn update-chip" title="Скачивается новая версия лаунчера">
+            <IconDownload size={16} />
+            <span>Обновление {update.percent || 0}%</span>
+          </span>
+        )}
+        {update?.state === 'ready' && (
+          <button
+            type="button"
+            className="chip-btn update-chip is-ready"
+            onClick={() => api.installUpdate()}
+            title={`Перезапустить лаунчер на версии ${update.latest}`}
+          >
+            <IconDownload size={16} />
+            <span>Обновить до {update.latest}</span>
+          </button>
+        )}
         <button type="button" className="chip-btn" onClick={() => api.openUrl(links.discord)} title="Discord Phoenix">
           <IconDiscord size={16} />
           <span>Discord</span>

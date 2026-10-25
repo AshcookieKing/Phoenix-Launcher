@@ -83,7 +83,7 @@ async function prepareAndLaunch({ mods, config, server, onProgress }) {
   }
 
   if (launchConfig.profilingLaunch !== false && !arma.profilingAvailable(launchConfig)) {
-    onProgress(96, 'Profiling-версия не установлена (Steam → Arma 3 → Бета-версии → profiling) — запуск обычной…');
+    onProgress(96, 'Profiling-exe не найден — запуск основной сборки (performance)…');
     await sleep(2500);
   }
   const launchResult = await arma.launchGame(launchConfig, modParam);

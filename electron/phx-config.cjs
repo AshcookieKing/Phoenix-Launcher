@@ -26,21 +26,11 @@ module.exports = {
   BOT_API: `http://${PHX_HOST}:5003`,
   ROLE_API: `http://${PHX_HOST}:8792`,
   MENU_LOGIN_URL: `http://${PHX_HOST}:5003/phx/menu/login?code=`,
-  // Общая галактика (HoloNet) и живые карты серверов Arma (map_api, server_id из rim_maplive)
-  GALAXY_API: `http://${PHX_HOST}:3005`,
-  MAP_API: `http://${PHX_HOST}:5050`,
-  BATTLE_MAPS: [
-    { serverId: 2, planet: 'Рилот', title: 'Фарабад', map: 'farabad' },
-    { serverId: 3, planet: 'Камино', title: 'Камино', map: 'kamino' },
-  ],
   LINKS: {
     discord: 'https://discord.gg/5FgEANx7Yu',
     // TeamSpeak Phoenix (TFAR): клиент TS3 открывается сразу на сервере
     teamspeak: 'ts3server://phoenixrparma3.ts3.so',
     teamspeakHost: 'phoenixrparma3.ts3.so',
-    progression: `http://${PHX_HOST}:8090/`,
-    galaxy: `http://${PHX_HOST}:3005/`,
-    battleMap: `http://${PHX_HOST}:5050/view`,
     workshopMod: 'https://steamcommunity.com/sharedfiles/filedetails/?id=3821631465',
   },
 };

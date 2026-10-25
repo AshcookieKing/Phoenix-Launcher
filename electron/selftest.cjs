@@ -20,18 +20,10 @@ function runSelfTest(app, win, outDir) {
         dock: document.querySelector('.dock')?.innerText.replace(/\\s+/g,' '),
       })`);
       await shot('home');
-      for (const tab of ['Моды', 'Галактика', 'Системы', 'Настройки']) {
+      for (const tab of ['Моды', 'Системы', 'Настройки']) {
         await js(`[...document.querySelectorAll('.tab')].find(b => b.textContent.includes('${tab}')).click()`);
-        await new Promise((r) => setTimeout(r, tab === 'Галактика' ? 12000 : tab === 'Моды' ? 3500 : 800));
-        await shot({ Моды: 'mods', Галактика: 'galaxy', Системы: 'systems', Настройки: 'settings' }[tab]);
-        if (tab === 'Галактика') {
-          report.galaxySite = await js(`({ iframe: document.querySelector('.galaxy-site iframe')?.src || null })`);
-          await js(`[...document.querySelectorAll('.seg button')].find(b => b.textContent.includes('Сводка'))?.click()`);
-          await new Promise((r) => setTimeout(r, 3500));
-          await shot('galaxy_summary');
-          report.galaxy = await js(`({ side: document.querySelector('.galaxy-side')?.innerText.replace(/\s+/g,' ').slice(0, 400), error: document.querySelector('.galaxy-error')?.innerText })`);
-          await js(`[...document.querySelectorAll('.seg button')].find(b => b.textContent.includes('Как на сайте'))?.click()`);
-        }
+        await new Promise((r) => setTimeout(r, tab === 'Моды' ? 3500 : 1500));
+        await shot({ Моды: 'mods', Системы: 'systems', Настройки: 'settings' }[tab]);
         if (tab === 'Моды') {
           report.mods = await js(`[...document.querySelectorAll('.mod-row')].map(r => r.innerText.replace(/\\s+/g,' '))`);
         }

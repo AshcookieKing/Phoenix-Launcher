@@ -11,18 +11,20 @@ const { listPlayerProfiles } = require('./arma-profiles.cjs');
 const { queryServer } = require('./a2s.cjs');
 const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
-const { getGalaxy } = require('./phx-galaxy.cjs');
+const { createUpdater } = require('./updater.cjs');
 const { SERVERS, LINKS } = require('./phx-config.cjs');
 const { connectTeamSpeak } = require('./teamspeak.cjs');
 
 const APP_VERSION = require('../package.json').version;
+const UPDATE_CHECK_MS = 6 * 3600 * 1000;
+let updater = null;
 
 // Phoenix Launcher — отдельное хранилище, не пересекается со StarFront
 app.setName('PhoenixLauncher');
 
 const STORE_KEYS = new Set([
   'armaExe', 'steamPath', 'workshopDir', 'pathsConfigured', 'presetPath',
-  'screenMode', 'optimizedLaunch', 'profilingLaunch', 'keepLogs', 'tsAutoConnect', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
+  'autoUpdate', 'screenMode', 'optimizedLaunch', 'profilingLaunch', 'keepLogs', 'tsAutoConnect', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
   'activeProfileId', 'playerName', 'selectedServer', 'soundsEnabled', 'minimizeOnLaunch', 'animationsEnabled',
 ]);
 
@@ -38,6 +40,8 @@ const store = new Store({
     optimizedLaunch: false,
     // Phoenix: игра запускается profiling-сборкой (arma3_x64_profiling.exe, ветка Steam «profiling»)
     profilingLaunch: true,
+    // обновления лаунчера из релизов GitHub: проверка при запуске и раз в 6 ч, скачивание в фоне
+    autoUpdate: true,
     keepLogs: false,
     tsAutoConnect: false,
     performancePreset: 'high',
@@ -72,7 +76,7 @@ function isArmaRunning(force = false) {
   let running = false;
   try {
     const out = execSync('tasklist /FO CSV /NH', { encoding: 'utf8', windowsHide: true }).toLowerCase();
-    running = ['arma3_x64.exe', 'arma3_x64_profiling.exe', 'arma3.exe'].some((exe) => out.includes(`"${exe}"`));
+    running = ['arma3_x64.exe', 'arma3_x64_profiling.exe', 'arma3profiling_x64.exe', 'arma3.exe'].some((exe) => out.includes(`"${exe}"`));
   } catch {}
   armaRunningCache = { at: Date.now(), value: running };
   return running;
@@ -188,7 +192,8 @@ function settingsPayload() {
     paths: p,
     pathsValid: p.pathsValid === true,
     pathErrors: p.pathErrors || [],
-    profilingInstalled: Boolean(p.armaExe) && fs.existsSync(path.join(path.dirname(p.armaExe), 'arma3_x64_profiling.exe')),
+    profilingInstalled: Boolean(p.armaExe) && arma.profilingAvailable({ armaExe: p.armaExe }),
+    armaBranch: p.armaExe ? arma.armaBranch({ armaExe: p.armaExe }) : '',
     profiles: listPlayerProfiles().slice(0, 30),
     servers: SERVERS,
     links: LINKS,
@@ -288,6 +293,22 @@ app.whenReady().then(async () => {
   await ensurePaths();
   createWindow();
   mainWindow.webContents.once('did-finish-load', () => startServerPolling());
+  updater = createUpdater({
+    appVersion: APP_VERSION,
+    onStatus: (s) => mainWindow?.webContents.send('update-status', s),
+    isAutoEnabled: () => store.get('autoUpdate') !== false,
+  });
+  if (!process.env.PHX_SELFTEST) {
+    setTimeout(() => updater.check(), 5000);
+    setInterval(() => updater.check(), UPDATE_CHECK_MS);
+  }
+});
+
+ipcMain.handle('get-update-status', () => updater?.getStatus() ?? { state: 'idle', current: APP_VERSION });
+ipcMain.handle('check-update', () => updater?.check({ manual: true }));
+ipcMain.handle('install-update', () => {
+  appQuitting = true;
+  return updater?.install(app) ?? { ok: false, error: 'Обновление недоступно' };
 });
 
 app.on('before-quit', () => {
@@ -445,8 +466,6 @@ async function tsConnect(askIfMissing = true) {
 }
 
 ipcMain.handle('ts-connect', () => tsConnect(true));
-
-ipcMain.handle('get-galaxy', () => getGalaxy());
 
 ipcMain.handle('open-url', (_, url) => {
   if (/^(https?|steam|ts3server):\/\//i.test(String(url || ''))) shell.openExternal(url);

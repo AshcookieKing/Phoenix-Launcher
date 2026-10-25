@@ -4,7 +4,6 @@ import TitleBar from './components/TitleBar';
 import HomeView from './components/HomeView';
 import ModsView from './components/ModsView';
 import SystemsView from './components/SystemsView';
-import GalaxyView from './components/GalaxyView';
 import SettingsView from './components/SettingsView';
 import LaunchDock from './components/LaunchDock';
 import AuthGate from './components/AuthGate';
@@ -23,6 +22,7 @@ export default function App() {
   const [modsChecking, setModsChecking] = useState(false);
   const [launch, setLaunch] = useState(IDLE);
   const [authAsk, setAuthAsk] = useState(null); // { serverId } - запуск ждёт входа через Discord
+  const [update, setUpdate] = useState(null); // автообновление из релизов GitHub
 
   const refreshMods = useCallback(async (force = false) => {
     setModsChecking(true);
@@ -44,10 +44,12 @@ export default function App() {
       api.getServers().then(setServers).catch(() => {});
       refreshAccount();
       if (s.pathsValid) refreshMods();
+      api.getUpdateStatus().then(setUpdate).catch(() => {});
     })();
     const offs = [
       api.onServers(setServers),
       api.onAccount(setAccount),
+      api.onUpdateStatus(setUpdate),
       api.onLaunchProgress((p) => setLaunch((prev) => ({ ...prev, ...p, phase: 'preparing' }))),
       api.onLaunchRunning(() => setLaunch({ percent: 100, message: 'Игра запущена · удачной службы', phase: 'running' })),
       api.onLaunchReset(() => setLaunch(IDLE)),
@@ -120,7 +122,7 @@ export default function App() {
   return (
     <div className="app" data-anim={settings.animationsEnabled !== false ? 'on' : 'off'}>
       <Background animated={settings.animationsEnabled !== false} />
-      <TitleBar view={view} onView={setView} links={settings.links} api={api} />
+      <TitleBar view={view} onView={setView} links={settings.links} api={api} update={update} />
 
       <main className="stage">
         {view === 'home' && (
@@ -146,10 +148,9 @@ export default function App() {
             onApplySettings={applySettings}
           />
         )}
-        {view === 'galaxy' && <GalaxyView api={api} links={settings.links} />}
-        {view === 'systems' && <SystemsView api={api} links={settings.links} />}
+        {view === 'systems' && <SystemsView />}
         {view === 'settings' && (
-          <SettingsView api={api} settings={settings} onSave={saveSettings} onApplySettings={applySettings} />
+          <SettingsView api={api} settings={settings} onSave={saveSettings} onApplySettings={applySettings} update={update} />
         )}
       </main>
 

@@ -41,7 +41,30 @@ function Segmented({ value, options, onChange }) {
   );
 }
 
-export default function SettingsView({ api, settings, onSave, onApplySettings }) {
+// Текст статуса автообновления (электрон присылает update-status)
+export function updateText(u) {
+  if (!u) return '';
+  switch (u.state) {
+    case 'checking':
+      return 'Проверка обновлений…';
+    case 'none':
+      return 'Установлена последняя версия';
+    case 'available':
+      return `Доступна версия ${u.latest}`;
+    case 'downloading':
+      return `Скачивание ${u.latest}: ${u.percent || 0}%`;
+    case 'ready':
+      return `Версия ${u.latest} скачана — перезапустите лаунчер`;
+    case 'error':
+      return `Не удалось проверить обновления: ${u.error}`;
+    case 'dev':
+      return 'Автообновление работает только в собранном PhoenixLauncher.exe';
+    default:
+      return '';
+  }
+}
+
+export default function SettingsView({ api, settings, onSave, onApplySettings, update }) {
   const [extraArgs, setExtraArgs] = useState(settings.extraLaunchArgs || '');
   const [pathMsg, setPathMsg] = useState('');
 
@@ -132,8 +155,10 @@ export default function SettingsView({ api, settings, onSave, onApplySettings })
             label="Запускать profiling-версию Arma 3"
             hint={
               settings.profilingInstalled
-                ? 'Установлена: arma3_x64_profiling.exe — та же сборка, что на серверах Phoenix, обычно больше FPS'
-                : 'Не установлена: Steam → Библиотека → Arma 3 → Свойства → Бета-версии → «profiling». Пока её нет, запускается обычная версия'
+                ? 'Profiling-exe найден — игра запускается им'
+                : settings.armaBranch === 'profiling'
+                  ? 'Ветка Steam «profiling» стоит, но отдельного profiling-exe нет — запускается её основная сборка «performance». Если нужен именно profiling-exe: Steam → Arma 3 → Свойства → Установленные файлы → «Проверить целостность»'
+                  : 'Ветка «profiling» не выбрана: Steam → Библиотека → Arma 3 → Свойства → Бета-версии → «profiling - Performance Profiling Build». Пока её нет, запускается обычная версия'
             }
           />
           <Toggle
@@ -195,6 +220,29 @@ export default function SettingsView({ api, settings, onSave, onApplySettings })
             label="Анимация пламени"
             hint="Искры на фоне и подсветка кнопки"
           />
+          <Toggle
+            checked={settings.autoUpdate !== false}
+            onChange={(v) => set({ autoUpdate: v })}
+            label="Автообновление"
+            hint="Новые версии из релизов GitHub скачиваются сами, установка — по кнопке «Обновить»"
+          />
+          <div className="update-row">
+            <span>{updateText(update) || `Версия ${settings.appVersion}`}</span>
+            {update?.state === 'ready' ? (
+              <button type="button" className="btn btn-fire" onClick={() => api.installUpdate()}>
+                Обновить и перезапустить
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => api.checkUpdate()}
+                disabled={update?.state === 'checking' || update?.state === 'downloading'}
+              >
+                <IconRefresh size={16} /> Проверить
+              </button>
+            )}
+          </div>
         </section>
       </div>
     </div>

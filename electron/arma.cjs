@@ -62,19 +62,43 @@ function sanitizeExtraArgs(extra, { allowNoSplash = false } = {}) {
   return parts.filter((a) => !isBannedLaunchArg(a, { allowNoSplash }));
 }
 
+// Отдельные exe ветки Steam «profiling» (диагностическая сборка). Основной arma3_x64.exe этой ветки — сборка «performance».
+const PROFILING_EXES = ['arma3_x64_profiling.exe', 'arma3profiling_x64.exe'];
+
+function profilingExe(config) {
+  const dir = path.dirname(config.armaExe || '');
+  for (const name of PROFILING_EXES) {
+    const p = path.join(dir, name);
+    if (fs.existsSync(p)) return p;
+  }
+  return '';
+}
+
+// Ветка Steam, на которой стоит Arma 3 (BetaKey в appmanifest_107410.acf): '' — основная, 'profiling', 'development'…
+function armaBranch(config) {
+  try {
+    const manifest = path.join(path.dirname(config.armaExe || ''), '..', '..', 'appmanifest_107410.acf');
+    const text = fs.readFileSync(manifest, 'utf8');
+    const mounted = text.split('"MountedConfig"')[1] || '';
+    const m = /"BetaKey"\s+"([^"]*)"/.exec(mounted);
+    return m ? m[1] : '';
+  } catch {
+    return '';
+  }
+}
+
 function resolveArmaExe(config) {
   const base = config.armaExe;
-  const dir = path.dirname(base);
-  const profiling = path.join(dir, 'arma3_x64_profiling.exe');
-  // Phoenix: по умолчанию profiling-сборка (как на серверах); выключается в настройках
-  if ((config.profilingLaunch !== false || config.optimizedLaunch === true) && fs.existsSync(profiling)) return profiling;
+  const profiling = profilingExe(config);
+  // Phoenix: profiling-exe, если Steam его поставил; выключается в настройках
+  if ((config.profilingLaunch !== false || config.optimizedLaunch === true) && profiling) return profiling;
   if (fs.existsSync(base)) return base;
-  if (fs.existsSync(profiling)) return profiling;
+  if (profiling) return profiling;
   return base;
 }
 
 function profilingAvailable(config) {
-  return fs.existsSync(path.join(path.dirname(config.armaExe || ''), 'arma3_x64_profiling.exe'));
+  return Boolean(profilingExe(config));
 }
 
 function removeSteamAppId(armaDir) {
@@ -389,4 +413,5 @@ module.exports = {
   ARMA_APP_ID,
   PERFORMANCE_PRESETS,
   profilingAvailable,
+  armaBranch,
 };

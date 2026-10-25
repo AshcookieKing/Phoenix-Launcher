@@ -1,6 +1,5 @@
 import {
   IconBackpack,
-  IconExternal,
   IconHolo,
   IconMedic,
   IconPanel,
@@ -69,18 +68,13 @@ const SYSTEMS = [
   },
 ];
 
-export default function SystemsView({ api, links }) {
+export default function SystemsView() {
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Системы Phoenix</h1>
           <p>Что ждёт на серверах: всё это работает прямо в игре, отдельно ставить ничего не нужно.</p>
-        </div>
-        <div className="page-actions">
-          <button type="button" className="btn btn-fire" onClick={() => api.openUrl(links.progression)}>
-            <IconExternal size={16} /> Подготовка клона
-          </button>
         </div>
       </div>
 

@@ -1532,181 +1532,25 @@ kbd {
   gap: 8px;
 }
 
-/* ---------- Галактика ---------- */
-.galaxy-page {
-  overflow: hidden;
-}
-.galaxy-error {
-  padding: 16px 18px;
-  color: var(--warn);
-}
-.galaxy-layout {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 16px;
-}
-.galaxy-map {
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-  background: rgba(8, 3, 2, 0.82);
-}
-.galaxy-canvas {
-  position: absolute;
-  inset: 0;
-}
-.galaxy-canvas canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  cursor: grab;
-}
-.galaxy-tip {
-  position: absolute;
-  pointer-events: none;
-  padding: 5px 9px;
-  font-size: 12px;
-  white-space: nowrap;
-  background: var(--panel-strong);
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  color: var(--text);
-}
-.galaxy-tip b {
-  color: var(--ivory);
-}
-.galaxy-front {
+/* ---------- Обновление лаунчера ---------- */
+.update-chip {
   color: var(--amber);
 }
-.galaxy-hint {
-  position: absolute;
-  left: 12px;
-  bottom: 10px;
-  font-size: 11px;
-  color: var(--text-faint);
+.update-chip.is-ready {
+  color: #1a0805;
+  background: var(--fire);
+  border-color: transparent;
+  box-shadow: var(--glow);
 }
-.galaxy-side {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
+.update-chip.is-ready span,
+.update-chip.is-ready svg {
+  color: #1a0805;
 }
-.galaxy-block {
-  padding: 12px 14px;
-  background: var(--panel-strong);
-}
-.galaxy-block h3 {
-  margin-bottom: 8px;
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 13px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--gold);
-}
-.galaxy-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 2px 0;
-  font-size: 13px;
-}
-.galaxy-row b {
-  color: var(--ivory);
-}
-.galaxy-row .dot {
-  margin-right: 6px;
-}
-.galaxy-fronts {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #ff8c8c;
-}
-.galaxy-muted {
-  font-size: 12px;
-  color: var(--text-faint);
-}
-.galaxy-muted .dot {
-  margin-right: 4px;
-}
-.galaxy-battle {
+.update-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 6px 0;
-  border-top: 1px solid var(--line);
-}
-.galaxy-battle:first-of-type {
-  border-top: 0;
-}
-.galaxy-battle b {
-  color: var(--ivory);
-}
-.galaxy-holonet {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-.galaxy-news {
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
-}
-.galaxy-news-meta {
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--amber);
-}
-.galaxy-news-meta b {
-  color: var(--gold);
-  font-weight: 600;
-}
-.galaxy-news-meta i {
-  color: var(--warn);
-  font-style: normal;
-}
-.galaxy-news h4 {
-  margin: 3px 0;
+  gap: 12px;
+  margin-top: 6px;
   font-size: 13px;
-  color: var(--ivory);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.galaxy-news p {
-  font-size: 12px;
-  line-height: 1.45;
-}
-.galaxy-site {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  padding: 0;
-}
-.galaxy-site iframe {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: var(--radius);
-  background: #02040a;
-}
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.seg button {
-  padding: 0 14px;
-  font: 600 13px var(--font-ui);
-  color: var(--text-dim);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-.seg button.is-on {
-  color: #1a0805;
-  background: var(--fire);
 }
