@@ -82,8 +82,12 @@ async function prepareAndLaunch({ mods, config, server, onProgress }) {
     onProgress(95, 'Запуск Arma 3 в меню Phoenix…');
   }
 
+  if (launchConfig.profilingLaunch !== false && !arma.profilingAvailable(launchConfig)) {
+    onProgress(96, 'Profiling-версия не установлена (Steam → Arma 3 → Бета-версии → profiling) — запуск обычной…');
+    await sleep(2500);
+  }
   const launchResult = await arma.launchGame(launchConfig, modParam);
-  onProgress(100, 'Игра запускается');
+  onProgress(100, /profiling/i.test(launchResult.exe) ? 'Игра запускается (profiling-версия)' : 'Игра запускается');
   return {
     ok: true,
     pid: launchResult.pid,

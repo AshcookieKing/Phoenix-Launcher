@@ -127,6 +127,16 @@ export default function SettingsView({ api, settings, onSave, onApplySettings })
             <Segmented value={settings.screenMode} options={SCREEN_MODES} onChange={(v) => set({ screenMode: v })} />
           </div>
           <Toggle
+            checked={settings.profilingLaunch !== false}
+            onChange={(v) => set({ profilingLaunch: v })}
+            label="Запускать profiling-версию Arma 3"
+            hint={
+              settings.profilingInstalled
+                ? 'Установлена: arma3_x64_profiling.exe — та же сборка, что на серверах Phoenix, обычно больше FPS'
+                : 'Не установлена: Steam → Библиотека → Arma 3 → Свойства → Бета-версии → «profiling». Пока её нет, запускается обычная версия'
+            }
+          />
+          <Toggle
             checked={settings.optimizedLaunch === true}
             onChange={(v) => set({ optimizedLaunch: v })}
             label="Оптимизированный запуск"

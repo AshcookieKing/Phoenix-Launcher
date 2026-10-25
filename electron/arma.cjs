@@ -66,11 +66,15 @@ function resolveArmaExe(config) {
   const base = config.armaExe;
   const dir = path.dirname(base);
   const profiling = path.join(dir, 'arma3_x64_profiling.exe');
-  // profiling только при явном «Оптимизированный запуск» — иначе ломается интро/ассеты
-  if (config.optimizedLaunch === true && fs.existsSync(profiling)) return profiling;
+  // Phoenix: по умолчанию profiling-сборка (как на серверах); выключается в настройках
+  if ((config.profilingLaunch !== false || config.optimizedLaunch === true) && fs.existsSync(profiling)) return profiling;
   if (fs.existsSync(base)) return base;
   if (fs.existsSync(profiling)) return profiling;
   return base;
+}
+
+function profilingAvailable(config) {
+  return fs.existsSync(path.join(path.dirname(config.armaExe || ''), 'arma3_x64_profiling.exe'));
 }
 
 function removeSteamAppId(armaDir) {
@@ -384,4 +388,5 @@ module.exports = {
   findModRoot,
   ARMA_APP_ID,
   PERFORMANCE_PRESETS,
+  profilingAvailable,
 };

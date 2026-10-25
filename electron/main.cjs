@@ -22,7 +22,7 @@ app.setName('PhoenixLauncher');
 
 const STORE_KEYS = new Set([
   'armaExe', 'steamPath', 'workshopDir', 'pathsConfigured', 'presetPath',
-  'screenMode', 'optimizedLaunch', 'keepLogs', 'tsAutoConnect', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
+  'screenMode', 'optimizedLaunch', 'profilingLaunch', 'keepLogs', 'tsAutoConnect', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
   'activeProfileId', 'playerName', 'selectedServer', 'soundsEnabled', 'minimizeOnLaunch', 'animationsEnabled',
 ]);
 
@@ -36,6 +36,8 @@ const store = new Store({
     presetPath: '',
     screenMode: 'borderless',
     optimizedLaunch: false,
+    // Phoenix: игра запускается profiling-сборкой (arma3_x64_profiling.exe, ветка Steam «profiling»)
+    profilingLaunch: true,
     keepLogs: false,
     tsAutoConnect: false,
     performancePreset: 'high',
@@ -151,6 +153,7 @@ function getConfig() {
     playerName: store.get('playerName'),
     screenMode: store.get('screenMode') || 'borderless',
     optimizedLaunch: store.get('optimizedLaunch') === true,
+    profilingLaunch: store.get('profilingLaunch') !== false,
     keepLogs: store.get('keepLogs') === true,
     tsAutoConnect: store.get('tsAutoConnect') === true,
     performancePreset: store.get('performancePreset') || 'high',
@@ -185,6 +188,7 @@ function settingsPayload() {
     paths: p,
     pathsValid: p.pathsValid === true,
     pathErrors: p.pathErrors || [],
+    profilingInstalled: Boolean(p.armaExe) && fs.existsSync(path.join(path.dirname(p.armaExe), 'arma3_x64_profiling.exe')),
     profiles: listPlayerProfiles().slice(0, 30),
     servers: SERVERS,
     links: LINKS,
