@@ -20,10 +20,13 @@ function runSelfTest(app, win, outDir) {
         dock: document.querySelector('.dock')?.innerText.replace(/\\s+/g,' '),
       })`);
       await shot('home');
-      for (const tab of ['Моды', 'Системы', 'Настройки']) {
+      for (const tab of ['Моды', 'Галактика', 'Системы', 'Настройки']) {
         await js(`[...document.querySelectorAll('.tab')].find(b => b.textContent.includes('${tab}')).click()`);
-        await new Promise((r) => setTimeout(r, tab === 'Моды' ? 2500 : 800));
-        await shot(tab === 'Моды' ? 'mods' : tab === 'Системы' ? 'systems' : 'settings');
+        await new Promise((r) => setTimeout(r, tab === 'Моды' || tab === 'Галактика' ? 3500 : 800));
+        await shot({ Моды: 'mods', Галактика: 'galaxy', Системы: 'systems', Настройки: 'settings' }[tab]);
+        if (tab === 'Галактика') {
+          report.galaxy = await js(`({ side: document.querySelector('.galaxy-side')?.innerText.replace(/\s+/g,' ').slice(0, 400), error: document.querySelector('.galaxy-error')?.innerText })`);
+        }
         if (tab === 'Моды') {
           report.mods = await js(`[...document.querySelectorAll('.mod-row')].map(r => r.innerText.replace(/\\s+/g,' '))`);
         }

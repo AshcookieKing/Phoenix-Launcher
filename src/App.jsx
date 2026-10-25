@@ -4,6 +4,7 @@ import TitleBar from './components/TitleBar';
 import HomeView from './components/HomeView';
 import ModsView from './components/ModsView';
 import SystemsView from './components/SystemsView';
+import GalaxyView from './components/GalaxyView';
 import SettingsView from './components/SettingsView';
 import LaunchDock from './components/LaunchDock';
 import AuthGate from './components/AuthGate';
@@ -145,6 +146,7 @@ export default function App() {
             onApplySettings={applySettings}
           />
         )}
+        {view === 'galaxy' && <GalaxyView api={api} links={settings.links} />}
         {view === 'systems' && <SystemsView api={api} links={settings.links} />}
         {view === 'settings' && (
           <SettingsView api={api} settings={settings} onSave={saveSettings} onApplySettings={applySettings} />

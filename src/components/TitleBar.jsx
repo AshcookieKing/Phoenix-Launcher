@@ -1,8 +1,9 @@
-import { IconClose, IconDiscord, IconHeadset, IconHome, IconMinimize, IconMods, IconSettings, IconSystems } from './Icons';
+import { IconClose, IconDiscord, IconHeadset, IconHolo, IconHome, IconMinimize, IconMods, IconSettings, IconSystems } from './Icons';
 
 const TABS = [
   { id: 'home', label: 'Главная', Icon: IconHome },
   { id: 'mods', label: 'Моды', Icon: IconMods },
+  { id: 'galaxy', label: 'Галактика', Icon: IconHolo },
   { id: 'systems', label: 'Системы', Icon: IconSystems },
   { id: 'settings', label: 'Настройки', Icon: IconSettings },
 ];

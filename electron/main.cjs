@@ -11,6 +11,7 @@ const { listPlayerProfiles } = require('./arma-profiles.cjs');
 const { queryServer } = require('./a2s.cjs');
 const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
+const { getGalaxy } = require('./phx-galaxy.cjs');
 const { SERVERS, LINKS } = require('./phx-config.cjs');
 const { connectTeamSpeak } = require('./teamspeak.cjs');
 
@@ -440,6 +441,8 @@ async function tsConnect(askIfMissing = true) {
 }
 
 ipcMain.handle('ts-connect', () => tsConnect(true));
+
+ipcMain.handle('get-galaxy', () => getGalaxy());
 
 ipcMain.handle('open-url', (_, url) => {
   if (/^(https?|steam|ts3server):\/\//i.test(String(url || ''))) shell.openExternal(url);

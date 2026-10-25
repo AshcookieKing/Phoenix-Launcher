@@ -82,4 +82,4 @@ async function botOnline() {
   return res.status === 200;
 }
 
-module.exports = { getMenuRoles, startMenuPair, unlinkMenu, botOnline };
+module.exports = { getMenuRoles, startMenuPair, unlinkMenu, botOnline, request };

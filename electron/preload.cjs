@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('phoenix', {
   menuLogout: () => ipcRenderer.invoke('menu-logout'),
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
   tsConnect: () => ipcRenderer.invoke('ts-connect'),
+  getGalaxy: () => ipcRenderer.invoke('get-galaxy'),
   openFolder: (p) => ipcRenderer.invoke('open-folder', p),
   autoDetectPaths: () => ipcRenderer.invoke('auto-detect-paths'),
   pickArmaExe: () => ipcRenderer.invoke('pick-arma-exe'),
