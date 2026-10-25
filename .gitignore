@@ -7,3 +7,4 @@ Thumbs.db
 .env.*
 release_new/
 .claude/
+release_ts/
