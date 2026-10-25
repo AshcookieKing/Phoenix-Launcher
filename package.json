@@ -1,6 +1,6 @@
 {
   "name": "phoenix-launcher",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Phoenix Launcher — Arma 3 Star Wars RP",
   "author": "Phoenix",
   "main": "electron/main.cjs",
