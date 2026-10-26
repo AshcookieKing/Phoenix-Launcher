@@ -23,9 +23,9 @@ module.exports = {
       queryPort: 2403,
     },
   ],
-  BOT_API: `http://${PHX_HOST}:5004`,
+  BOT_API: `http://${PHX_HOST}:5003`,
   ROLE_API: `http://${PHX_HOST}:8792`,
-  MENU_LOGIN_URL: `http://${PHX_HOST}:5004/phx/menu/login?code=`,
+  MENU_LOGIN_URL: `https://phoenixrp.ru/phx/menu/login?code=`,
   LINKS: {
     discord: 'https://discord.gg/5FgEANx7Yu',
     // TeamSpeak Phoenix (TFAR): клиент TS3 открывается сразу на сервере
