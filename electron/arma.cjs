@@ -410,6 +410,7 @@ module.exports = {
   launchGame,
   openSteamSubscribe,
   findModRoot,
+  locateModFolder,
   ARMA_APP_ID,
   PERFORMANCE_PRESETS,
   profilingAvailable,

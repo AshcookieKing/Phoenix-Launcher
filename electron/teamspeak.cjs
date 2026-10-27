@@ -13,7 +13,15 @@ function regValues(key) {
   }
 }
 
+// путь к клиенту запоминаем: опрос реестра занимает секунды и подвешивает окно лаунчера
+let ts3ExeCache = null;
 function findTs3Client() {
+  if (ts3ExeCache && fs.existsSync(ts3ExeCache)) return ts3ExeCache;
+  ts3ExeCache = findTs3ClientUncached();
+  return ts3ExeCache;
+}
+
+function findTs3ClientUncached() {
   // сначала Program Files (обычно свежая установка), копия в профиле - последней: там бывает старая 3.1.x,
   // которую Windows без прав администратора не запускает (EACCES, 25.10)
   const found = [
@@ -156,4 +164,72 @@ async function ensureTeamSpeak(url, { timeoutMs = 90000, onStep = () => {} } = {
   return { ok: false, state: 'timeout' };
 }
 
-module.exports = { findTs3Client, connectTeamSpeak, tsConnectedCount, ensureTeamSpeak };
+// ---- плагин TFAR для TeamSpeak 3: из мода TFAR (teamspeak\task_force_radio.ts3_plugin = zip с plugins\...) ----
+const os = require('os');
+const crypto = require('crypto');
+
+// папка настроек TS3: портативная установка держит её рядом с клиентом (config\), обычная - %APPDATA%\TS3Client
+function ts3ConfigDir(exe) {
+  if (exe) {
+    const c = path.join(path.dirname(exe), 'config');
+    if (fs.existsSync(path.join(c, 'settings.db'))) return c;
+  }
+  return path.join(process.env.APPDATA || '', 'TS3Client');
+}
+
+function fileHash(f) {
+  try {
+    return crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex');
+  } catch {
+    return '';
+  }
+}
+
+// пакет распаковывается во временную папку (по времени изменения пакета - повторно не распаковываем)
+function extractPackage(pkg) {
+  const st = fs.statSync(pkg);
+  const dir = path.join(os.tmpdir(), `phx_tfar_${st.size}_${Math.floor(st.mtimeMs)}`);
+  if (fs.existsSync(path.join(dir, 'plugins', 'TFAR_win64.dll'))) return dir;
+  fs.rmSync(dir, { recursive: true, force: true });
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory(${q(pkg)}, ${q(dir)})`],
+  { windowsHide: true, timeout: 60000 });
+  return dir;
+}
+
+// Есть такой же TFAR_win64.dll - ничего не делаем; нет / другой - копируем plugins\ из пакета в настройки TS3.
+// { state: 'ok'|'installed'|'no_package'|'no_client'|'locked'|'error', running }
+function ensureTfarPlugin(pkg) {
+  const exe = findTs3Client();
+  if (!exe) return { state: 'no_client' };
+  if (!pkg || !fs.existsSync(pkg)) return { state: 'no_package' };
+  const plugins = path.join(ts3ConfigDir(exe), 'plugins');
+  let src;
+  try {
+    src = extractPackage(pkg);
+  } catch {
+    return { state: 'error' };
+  }
+  const want = fileHash(path.join(src, 'plugins', 'TFAR_win64.dll'));
+  if (want && want === fileHash(path.join(plugins, 'TFAR_win64.dll'))) return { state: 'ok' };
+  try {
+    fs.mkdirSync(plugins, { recursive: true });
+    fs.cpSync(path.join(src, 'plugins'), plugins, { recursive: true, force: true });
+  } catch (e) {
+    // старый TFAR_win64.dll загружен запущенным TeamSpeak - заменить нельзя
+    return { state: /EBUSY|EPERM|EACCES/.test(e.code || '') ? 'locked' : 'error' };
+  }
+  return { state: 'installed' };
+}
+
+function ts3Running() {
+  try {
+    return /ts3client_win/i.test(execFileSync('tasklist', ['/FI', 'IMAGENAME eq ts3client_win64.exe', '/NH'],
+      { encoding: 'utf8', windowsHide: true, timeout: 5000 }));
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { findTs3Client, connectTeamSpeak, tsConnectedCount, ensureTeamSpeak, ensureTfarPlugin, ts3Running };

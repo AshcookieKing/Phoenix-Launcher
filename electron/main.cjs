@@ -13,7 +13,7 @@ const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { SERVERS, LINKS } = require('./phx-config.cjs');
-const { connectTeamSpeak, ensureTeamSpeak } = require('./teamspeak.cjs');
+const { connectTeamSpeak, ensureTeamSpeak, ensureTfarPlugin, ts3Running } = require('./teamspeak.cjs');
 
 const APP_VERSION = require('../package.json').version;
 const UPDATE_CHECK_MS = 6 * 3600 * 1000;
@@ -383,6 +383,8 @@ ipcMain.handle('launch', async (event, { serverId = null } = {}) => {
     // TeamSpeak до игры (настройка «Подключаться к TeamSpeak при запуске игры»): ждём, пока клиент зайдёт на сервер,
     // иначе TFAR в игре стартует без TS. Не дождались (нет плагина ClientQuery / таймаут) - игра всё равно запускается.
     if (store.get('tsAutoConnect') !== false) {
+      progress(1, 'Проверка плагина TFAR...');
+      await checkTfarPlugin();
       progress(2, 'Запуск TeamSpeak...');
       const ts = await ensureTeamSpeak(LINKS.teamspeak, { onStep: (m) => progress(3, m) });
       if (ts.ok) progress(5, 'TeamSpeak подключён');
@@ -458,6 +460,23 @@ ipcMain.handle('menu-pair-cancel', () => {
   stopPairPolling();
   return { ok: true };
 });
+
+// Плагин TFAR в TeamSpeak 3: нет или устарел - ставим из мода TFAR (Steam Workshop 894678801)
+const TFAR_WORKSHOP_ID = '894678801';
+async function checkTfarPlugin() {
+  const mod = arma.locateModFolder(TFAR_WORKSHOP_ID, getConfig());
+  const pkg = mod ? path.join(mod.folder, 'teamspeak', 'task_force_radio.ts3_plugin') : '';
+  const wasRunning = ts3Running();
+  const res = ensureTfarPlugin(pkg);
+  if (res.state === 'installed' && wasRunning) {
+    await dialog.showMessageBox(mainWindow, { type: 'info', title: 'TeamSpeak 3', message: 'Плагин TFAR установлен',
+      detail: 'Перезапустите TeamSpeak 3, чтобы рация в игре заработала.', buttons: ['OK'] });
+  } else if (res.state === 'locked') {
+    await dialog.showMessageBox(mainWindow, { type: 'warning', title: 'TeamSpeak 3', message: 'Плагин TFAR устарел',
+      detail: 'Закройте TeamSpeak 3 и нажмите «Подключиться» ещё раз - лаунчер обновит плагин.', buttons: ['OK'] });
+  }
+  return res;
+}
 
 // TeamSpeak 3 сразу на сервере Phoenix; нет клиента - предложить скачать (askIfMissing)
 async function tsConnect(askIfMissing = true) {
