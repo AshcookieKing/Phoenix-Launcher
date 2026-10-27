@@ -60,4 +60,100 @@ function connectTeamSpeak(url) {
   return { ok: true, exe };
 }
 
-module.exports = { findTs3Client, connectTeamSpeak };
+// ---- ClientQuery (плагин clientquery TS3, 127.0.0.1:25639): подключён ли клиент к серверу ----
+// ключ API клиент сам пишет в %APPDATA%\TS3Client\clientquery.ini (api_key=...)
+const net = require('net');
+
+function clientQueryKey() {
+  try {
+    const ini = fs.readFileSync(path.join(process.env.APPDATA || '', 'TS3Client', 'clientquery.ini'), 'utf8');
+    const m = ini.match(/^\s*api_key\s*=\s*([A-Z0-9-]+)/im);
+    return m ? m[1] : '';
+  } catch {
+    return '';
+  }
+}
+
+// число вкладок TS3, подключённых к серверу; null - ClientQuery недоступен (клиент не запущен / нет плагина или ключа)
+function tsConnectedCount(timeoutMs = 3000) {
+  const key = clientQueryKey();
+  return new Promise((resolve) => {
+    const sock = net.connect(25639, '127.0.0.1');
+    let buf = '';
+    let done = false;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      sock.destroy();
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    // команды по очереди: ответ каждой заканчивается строкой «error id=...»
+    const queue = [];
+    let pending = null;
+    const send = (cmd) => new Promise((res) => { queue.push({ cmd, res }); pump(); });
+    const pump = () => {
+      if (pending || !queue.length || !ready) return;
+      pending = queue.shift();
+      sock.write(pending.cmd + '\n');
+    };
+    let ready = false;
+    sock.on('data', (d) => {
+      buf += d.toString('utf8');
+      if (!ready) {
+        if (!/selected schandlerid=\d+/.test(buf)) return;
+        ready = true;
+        buf = '';
+        pump();
+        return;
+      }
+      const m = buf.match(/error id=(\d+)[^\n]*/);
+      if (!m || !pending) return;
+      const body = buf.slice(0, m.index);
+      buf = buf.slice(m.index + m[0].length);
+      const p = pending;
+      pending = null;
+      p.res({ id: Number(m[1]), body });
+      pump();
+    });
+    sock.on('error', () => finish(null));
+    sock.on('close', () => finish(null));
+    (async () => {
+      if (key && (await send(`auth apikey=${key}`)).id !== 0) return finish(null);
+      const list = await send('serverconnectionhandlerlist');
+      if (list.id !== 0) return finish(null);
+      const ids = [...list.body.matchAll(/schandlerid=(\d+)/g)].map((x) => x[1]);
+      let n = 0;
+      for (const id of ids) {
+        if ((await send(`use schandlerid=${id}`)).id !== 0) continue;
+        if ((await send('whoami')).id === 0) n++;   // не подключена - error id=1794 not connected
+      }
+      finish(n);
+    })();
+  });
+}
+
+// TeamSpeak перед игрой: уже на сервере - сразу; иначе запустить клиент и ждать подключения (до timeoutMs).
+// onStep(message) - текст для полосы запуска. { ok, state: 'connected'|'already'|'timeout'|'no_query'|'not_found' }
+async function ensureTeamSpeak(url, { timeoutMs = 90000, onStep = () => {} } = {}) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  if ((await tsConnectedCount()) > 0) return { ok: true, state: 'already' };
+  onStep('Запуск TeamSpeak...');
+  const res = connectTeamSpeak(url);
+  if (!res.ok) return { ok: false, state: 'not_found' };
+  const t0 = Date.now();
+  let seenQuery = false;
+  while (Date.now() - t0 < timeoutMs) {
+    await sleep(1500);
+    const n = await tsConnectedCount();
+    if (n !== null) seenQuery = true;
+    if (n > 0) return { ok: true, state: 'connected' };
+    // клиент запущен, а ClientQuery так и не ответил (плагин выключен) - не держим игру дольше 20 с
+    if (!seenQuery && Date.now() - t0 > 20000) return { ok: false, state: 'no_query' };
+    onStep(seenQuery ? 'Подключение к серверу TeamSpeak...' : 'Запуск TeamSpeak...');
+  }
+  return { ok: false, state: 'timeout' };
+}
+
+module.exports = { findTs3Client, connectTeamSpeak, tsConnectedCount, ensureTeamSpeak };

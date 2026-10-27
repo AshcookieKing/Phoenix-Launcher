@@ -13,7 +13,7 @@ const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { SERVERS, LINKS } = require('./phx-config.cjs');
-const { connectTeamSpeak } = require('./teamspeak.cjs');
+const { connectTeamSpeak, ensureTeamSpeak } = require('./teamspeak.cjs');
 
 const APP_VERSION = require('../package.json').version;
 const UPDATE_CHECK_MS = 6 * 3600 * 1000;
@@ -372,17 +372,23 @@ ipcMain.handle('launch', async (event, { serverId = null } = {}) => {
   if (!cachedMods.length) loadModsList();
   await ensurePaths();
   const server = serverId ? SERVERS.find((s) => s.id === serverId) : null;
+  const progress = (percent, message) => event.sender.send('launch-progress', { percent, message });
   try {
+    // TeamSpeak до игры (настройка «Подключаться к TeamSpeak при запуске игры»): ждём, пока клиент зайдёт на сервер,
+    // иначе TFAR в игре стартует без TS. Не дождались (нет плагина ClientQuery / таймаут) - игра всё равно запускается.
+    if (store.get('tsAutoConnect') !== false) {
+      progress(2, 'Запуск TeamSpeak...');
+      const ts = await ensureTeamSpeak(LINKS.teamspeak, { onStep: (m) => progress(3, m) });
+      if (ts.ok) progress(5, 'TeamSpeak подключён');
+    }
     const result = await prepareAndLaunch({
       mods: cachedMods,
       config: getConfig(),
       server,
-      onProgress: (percent, message) => event.sender.send('launch-progress', { percent, message }),
+      onProgress: progress,
     });
     if (result.ok) {
       watchGameProcess(result.pid);
-      // TeamSpeak вместе с игрой (настройка «Подключаться к TeamSpeak при запуске игры»)
-      if (store.get('tsAutoConnect') !== false) tsConnect(false);
       if (store.get('minimizeOnLaunch') !== false) setTimeout(() => mainWindow?.minimize(), 800);
     }
     return result;

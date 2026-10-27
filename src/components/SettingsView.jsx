@@ -177,7 +177,7 @@ export default function SettingsView({ api, settings, onSave, onApplySettings, u
             checked={settings.tsAutoConnect !== false}
             onChange={(v) => set({ tsAutoConnect: v })}
             label="Подключаться к TeamSpeak при запуске игры"
-            hint="Запустит TeamSpeak 3 на 51.83.138.244:8465 (рация TFAR работает только с TeamSpeak 3)"
+            hint="Перед игрой запустит TeamSpeak 3 и дождётся входа на 51.83.138.244:8465 (рация TFAR работает только с TeamSpeak 3)"
           />
           <Toggle
             checked={settings.keepLogs === true}
