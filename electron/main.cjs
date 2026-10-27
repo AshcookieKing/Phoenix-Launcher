@@ -43,7 +43,7 @@ const store = new Store({
     // обновления лаунчера из релизов GitHub: проверка при запуске и раз в 6 ч, скачивание в фоне
     autoUpdate: true,
     keepLogs: false,
-    tsAutoConnect: false,
+    tsAutoConnect: true,
     performancePreset: 'high',
     extraLaunchArgs: '',
     skipLogos: false,
@@ -159,7 +159,7 @@ function getConfig() {
     optimizedLaunch: store.get('optimizedLaunch') === true,
     profilingLaunch: store.get('profilingLaunch') !== false,
     keepLogs: store.get('keepLogs') === true,
-    tsAutoConnect: store.get('tsAutoConnect') === true,
+    tsAutoConnect: store.get('tsAutoConnect') !== false,
     performancePreset: store.get('performancePreset') || 'high',
     extraLaunchArgs: store.get('extraLaunchArgs'),
     skipLogos: store.get('skipLogos') === true,
@@ -382,7 +382,7 @@ ipcMain.handle('launch', async (event, { serverId = null } = {}) => {
     if (result.ok) {
       watchGameProcess(result.pid);
       // TeamSpeak вместе с игрой (настройка «Подключаться к TeamSpeak при запуске игры»)
-      if (store.get('tsAutoConnect') === true) tsConnect(false);
+      if (store.get('tsAutoConnect') !== false) tsConnect(false);
       if (store.get('minimizeOnLaunch') !== false) setTimeout(() => mainWindow?.minimize(), 800);
     }
     return result;

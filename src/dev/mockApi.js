@@ -26,7 +26,7 @@ const settings = {
     { id: 'farabad', name: 'Фарабад', tag: 'ФРОНТ', subtitle: 'Война с КНС · ALiVE · опорники и щиты', host: '109.248.4.45', port: 2302 },
     { id: 'kamino', name: 'Камино', tag: 'УЧЕБНЫЙ ХАБ', subtitle: 'Обучение клонов · симуляции · рекорды', host: '109.248.4.45', port: 2402 },
   ],
-  links: { discord: '#', teamspeak: '#', teamspeakHost: 'phoenixrparma3.ts3.so', progression: '#', workshopMod: '#' },
+  links: { discord: '#', teamspeak: '#', teamspeakHost: '51.83.138.244:8465', progression: '#', workshopMod: '#' },
 };
 const linked = !new URLSearchParams(location.search).get('unlinked');
 const account = {

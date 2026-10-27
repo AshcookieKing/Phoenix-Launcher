@@ -29,8 +29,8 @@ module.exports = {
   LINKS: {
     discord: 'https://discord.gg/5FgEANx7Yu',
     // TeamSpeak Phoenix (TFAR): клиент TS3 открывается сразу на сервере
-    teamspeak: 'ts3server://phoenixrparma3.ts3.so',
-    teamspeakHost: 'phoenixrparma3.ts3.so',
+    teamspeak: 'ts3server://51.83.138.244?port=8465',
+    teamspeakHost: '51.83.138.244:8465',
     workshopMod: 'https://steamcommunity.com/sharedfiles/filedetails/?id=3821631465',
   },
 };

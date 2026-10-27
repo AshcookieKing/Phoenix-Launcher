@@ -174,10 +174,10 @@ export default function SettingsView({ api, settings, onSave, onApplySettings, u
             </div>
           )}
           <Toggle
-            checked={settings.tsAutoConnect === true}
+            checked={settings.tsAutoConnect !== false}
             onChange={(v) => set({ tsAutoConnect: v })}
             label="Подключаться к TeamSpeak при запуске игры"
-            hint="Запустит TeamSpeak 3 на phoenixrparma3.ts3.so (рация TFAR работает только с TeamSpeak 3)"
+            hint="Запустит TeamSpeak 3 на 51.83.138.244:8465 (рация TFAR работает только с TeamSpeak 3)"
           />
           <Toggle
             checked={settings.keepLogs === true}
