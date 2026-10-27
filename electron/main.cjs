@@ -55,6 +55,12 @@ const store = new Store({
     animationsEnabled: true,
   },
 });
+// 1.2.4: TeamSpeak перед игрой включён по умолчанию, но electron-store уже записал старое значение по умолчанию (false)
+// в phoenix-launcher.json - один раз включаем; выключенное потом вручную сохраняется
+if (!store.get('tsAutoConnectMigrated')) {
+  store.set('tsAutoConnect', true);
+  store.set('tsAutoConnectMigrated', true);
+}
 
 let mainWindow = null;
 let cachedMods = [];
