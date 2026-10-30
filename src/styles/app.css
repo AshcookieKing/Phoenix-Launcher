@@ -549,17 +549,6 @@ input::placeholder {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-.servers-hint {
-  font-size: 12px;
-  color: var(--text-dim);
-  line-height: 1.5;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
-}
-.servers-hint b {
-  color: var(--ivory);
-  font-weight: 700;
-}
-
 .server-card {
   position: relative;
   display: flex;

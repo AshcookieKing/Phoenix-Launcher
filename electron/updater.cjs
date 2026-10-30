@@ -1,7 +1,7 @@
 // Автообновление по релизам GitHub (AshcookieKing/Phoenix-Launcher).
 // Сборка portable: electron-updater её не обновляет, поэтому свой путь —
-// latest release → скачать PhoenixLauncher.exe рядом с текущим → текущий переименовать в .old.exe, новый поставить на его
-// место и запустить (без PowerShell).
+// latest release → скачать PhoenixLauncher.exe рядом с текущим → сразу же: текущий переименовать в .old.exe, новый
+// поставить на его место (со следующего запуска - новая версия; кнопка «Перезапустить» - сейчас). Без PowerShell.
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -138,7 +138,7 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
   }
 
   async function check({ manual = false } = {}) {
-    if (busy || status.state === 'ready') return status;
+    if (busy || status.state === 'ready' || status.state === 'installed') return status;
     busy = true;
     try {
       set({ state: 'checking', error: null });
@@ -187,14 +187,16 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
       throw new Error('файл обновления скачался не полностью');
     }
     fs.renameSync(tmp, pending);
-    set({ state: 'ready', percent: 100, ...info });
+    // ставим сразу: со следующего запуска лаунчер уже новой версии, перезапуск сейчас - по кнопке
+    const staged = stage();
+    set(staged.ok ? { state: 'installed', percent: 100, ...info } : { state: 'ready', percent: 100, error: staged.error, ...info });
   }
 
   // Установка без скрытого PowerShell (его антивирусы считают признаком вредоноса): запущенный PhoenixLauncher.exe
   // Windows разрешает переименовать - он становится PhoenixLauncher.old.exe (удаляется при следующем запуске),
-  // новый ставится на его место и запускается напрямую с --after-update (ждёт, пока этот экземпляр закроется).
-  function install(app) {
-    if (status.state !== 'ready' || !fs.existsSync(pending)) return { ok: false, error: 'Обновление ещё не скачано' };
+  // скачанный ставится на его место. Работающий экземпляр это не трогает (он уже распакован во временную папку).
+  function stage() {
+    if (!fs.existsSync(pending)) return { ok: false, error: 'Обновление ещё не скачано' };
     try {
       fs.rmSync(old, { force: true });
     } catch {
@@ -213,6 +215,17 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
       } catch {}
       return { ok: false, error: `Не удалось установить обновление (${e.code || e.message}). Скачайте новую версию с GitHub.` };
     }
+    return { ok: true };
+  }
+
+  // Перезапуск на новой версии: новый exe с --after-update ждёт, пока этот экземпляр закроется.
+  function install(app) {
+    if (status.state === 'ready') {
+      const staged = stage();
+      if (!staged.ok) return staged;
+      set({ state: 'installed' });
+    }
+    if (status.state !== 'installed') return { ok: false, error: 'Обновление ещё не скачано' };
     spawn(exePath, ['--after-update'], { cwd: path.dirname(exePath), detached: true, stdio: 'ignore' }).unref();
     setTimeout(() => app.exit(0), 300);
     return { ok: true };

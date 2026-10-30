@@ -38,15 +38,19 @@ export default function TitleBar({ view, onView, links, api, update }) {
             <span>Обновление {update.percent || 0}%</span>
           </span>
         )}
-        {update?.state === 'ready' && (
+        {(update?.state === 'ready' || update?.state === 'installed') && (
           <button
             type="button"
             className="chip-btn update-chip is-ready"
             onClick={() => api.installUpdate()}
-            title={`Перезапустить лаунчер на версии ${update.latest}`}
+            title={
+              update.state === 'installed'
+                ? `Версия ${update.latest} уже установлена и включится при следующем запуске. Нажмите, чтобы перезапустить сейчас`
+                : `Перезапустить лаунчер на версии ${update.latest}`
+            }
           >
             <IconDownload size={16} />
-            <span>Обновить до {update.latest}</span>
+            <span>{update.state === 'installed' ? `Перезапустить: ${update.latest}` : `Обновить до ${update.latest}`}</span>
           </button>
         )}
         <button type="button" className="chip-btn" onClick={() => api.openUrl(links.discord)} title="Discord Phoenix">

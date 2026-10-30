@@ -17,7 +17,7 @@ const { SERVERS, LINKS } = require('./phx-config.cjs');
 const { connectTeamSpeak, ensureTeamSpeak, ensureTfarPlugin, ts3Running } = require('./teamspeak.cjs');
 
 const APP_VERSION = require('../package.json').version;
-const UPDATE_CHECK_MS = 6 * 3600 * 1000;
+const UPDATE_CHECK_MS = 3600 * 1000;   // раз в час (github.com/.../releases/latest - без лимита API)
 let updater = null;
 
 // Phoenix Launcher — отдельное хранилище, не пересекается со StarFront

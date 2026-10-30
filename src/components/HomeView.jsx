@@ -71,10 +71,6 @@ export default function HomeView({
             />
           ))}
         </div>
-        <p className="servers-hint">
-          <b>ИГРАТЬ</b> — запуск в меню Phoenix: выбор персонажа и «Подключиться».
-          <b> Быстрый вход</b> — сразу на сервер с персонажем из прошлой сессии.
-        </p>
       </section>
     </div>
   );

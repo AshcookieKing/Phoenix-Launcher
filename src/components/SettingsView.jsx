@@ -55,6 +55,8 @@ export function updateText(u) {
       return `Скачивание ${u.latest}: ${u.percent || 0}%`;
     case 'ready':
       return `Версия ${u.latest} скачана — перезапустите лаунчер`;
+    case 'installed':
+      return `Версия ${u.latest} установлена — включится при следующем запуске`;
     case 'error':
       return `Не удалось проверить обновления: ${u.error}`;
     case 'dev':
@@ -224,13 +226,13 @@ export default function SettingsView({ api, settings, onSave, onApplySettings, u
             checked={settings.autoUpdate !== false}
             onChange={(v) => set({ autoUpdate: v })}
             label="Автообновление"
-            hint="Новые версии из релизов GitHub скачиваются сами, установка — по кнопке «Обновить»"
+            hint="Новые версии из релизов GitHub скачиваются и ставятся сами — включаются при следующем запуске лаунчера"
           />
           <div className="update-row">
             <span>{updateText(update) || `Версия ${settings.appVersion}`}</span>
-            {update?.state === 'ready' ? (
+            {update?.state === 'ready' || update?.state === 'installed' ? (
               <button type="button" className="btn btn-fire" onClick={() => api.installUpdate()}>
-                Обновить и перезапустить
+                {update.state === 'installed' ? 'Перезапустить сейчас' : 'Обновить и перезапустить'}
               </button>
             ) : (
               <button
