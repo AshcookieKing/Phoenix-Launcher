@@ -53,17 +53,20 @@ function findTs3ClientUncached() {
 function connectTeamSpeak(url) {
   const exe = findTs3Client();
   if (!exe) return { ok: false, error: 'not_found' };
-  // не прямым spawn: старой 3.1.x в профиле нужны права администратора - spawn давал EACCES и необработанную ошибку
-  // главного процесса (25.10)
+  // Прямой запуск клиента. Старой 3.1.x в профиле нужны права администратора - spawn тогда даёт EACCES (25.10):
+  // ошибка ловится, и ссылку ts3server:// открывает Windows (ShellExecute сам спросит UAC). Без PowerShell -
+  // скрытый PowerShell антивирусы (Kaspersky PDM) считают признаком вредоноса.
+  const viaShell = () => {
+    try {
+      require('electron').shell.openExternal(url).catch(() => {});
+    } catch {}
+  };
   try {
-    // PowerShell Start-Process = ShellExecute (запрос UAC, если клиенту нужны права); пути без одинарных кавычек
-    const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
-    const cmd = `Start-Process -FilePath ${q(exe)} -WorkingDirectory ${q(path.dirname(exe))} -ArgumentList ${q(url)}`;
-    // без detached: с ним Start-Process не срабатывал (проверено); PowerShell выходит сразу после запуска клиента
-    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { stdio: 'ignore', windowsHide: true });
-    child.on('error', () => {});
-  } catch (e) {
-    return { ok: false, error: e.message || 'spawn' };
+    const child = spawn(exe, [url], { cwd: path.dirname(exe), detached: true, stdio: 'ignore', windowsHide: false });
+    child.on('error', viaShell);
+    child.unref();
+  } catch {
+    viaShell();
   }
   return { ok: true, exe };
 }
@@ -165,8 +168,8 @@ async function ensureTeamSpeak(url, { timeoutMs = 90000, onStep = () => {} } = {
 }
 
 // ---- плагин TFAR для TeamSpeak 3: из мода TFAR (teamspeak\task_force_radio.ts3_plugin = zip с plugins\...) ----
-const os = require('os');
 const crypto = require('crypto');
+const { readZip } = require('./zip.cjs');
 
 // папка настроек TS3: портативная установка держит её рядом с клиентом (config\), обычная - %APPDATA%\TS3Client
 function ts3ConfigDir(exe) {
@@ -185,17 +188,13 @@ function fileHash(f) {
   }
 }
 
-// пакет распаковывается во временную папку (по времени изменения пакета - повторно не распаковываем)
-function extractPackage(pkg) {
-  const st = fs.statSync(pkg);
-  const dir = path.join(os.tmpdir(), `phx_tfar_${st.size}_${Math.floor(st.mtimeMs)}`);
-  if (fs.existsSync(path.join(dir, 'plugins', 'TFAR_win64.dll'))) return dir;
-  fs.rmSync(dir, { recursive: true, force: true });
-  const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    `Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory(${q(pkg)}, ${q(dir)})`],
-  { windowsHide: true, timeout: 60000 });
-  return dir;
+// файлы plugins\... из пакета (zip читается в памяти - без PowerShell и временной папки)
+function packagePlugins(pkg) {
+  return readZip(pkg)
+    .filter((e) => /^plugins\//i.test(e.name))
+    .map((e) => ({ rel: e.name.slice('plugins/'.length), data: e.data }))
+    // только файлы внутри plugins\: без «..» и абсолютных путей
+    .filter((e) => e.rel && !e.rel.split('/').some((s) => s === '..' || s === '') && !/^[a-z]:/i.test(e.rel));
 }
 
 // Есть такой же TFAR_win64.dll - ничего не делаем; нет / другой - копируем plugins\ из пакета в настройки TS3.
@@ -205,17 +204,22 @@ function ensureTfarPlugin(pkg) {
   if (!exe) return { state: 'no_client' };
   if (!pkg || !fs.existsSync(pkg)) return { state: 'no_package' };
   const plugins = path.join(ts3ConfigDir(exe), 'plugins');
-  let src;
+  let files;
   try {
-    src = extractPackage(pkg);
+    files = packagePlugins(pkg);
   } catch {
     return { state: 'error' };
   }
-  const want = fileHash(path.join(src, 'plugins', 'TFAR_win64.dll'));
-  if (want && want === fileHash(path.join(plugins, 'TFAR_win64.dll'))) return { state: 'ok' };
+  const dll = files.find((f) => f.rel.toLowerCase() === 'tfar_win64.dll');
+  if (!dll) return { state: 'error' };
+  const want = crypto.createHash('sha1').update(dll.data).digest('hex');
+  if (want === fileHash(path.join(plugins, 'TFAR_win64.dll'))) return { state: 'ok' };
   try {
-    fs.mkdirSync(plugins, { recursive: true });
-    fs.cpSync(path.join(src, 'plugins'), plugins, { recursive: true, force: true });
+    for (const f of files) {
+      const dst = path.join(plugins, ...f.rel.split('/'));
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.writeFileSync(dst, f.data);
+    }
   } catch (e) {
     // старый TFAR_win64.dll загружен запущенным TeamSpeak - заменить нельзя
     return { state: /EBUSY|EPERM|EACCES/.test(e.code || '') ? 'locked' : 'error' };

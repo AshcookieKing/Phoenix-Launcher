@@ -1,6 +1,7 @@
 // Автообновление по релизам GitHub (AshcookieKing/Phoenix-Launcher).
 // Сборка portable: electron-updater её не обновляет, поэтому свой путь —
-// latest release → скачать PhoenixLauncher.exe рядом с текущим → после выхода лаунчера PowerShell подменяет файл и запускает новый.
+// latest release → скачать PhoenixLauncher.exe рядом с текущим → текущий переименовать в .old.exe, новый поставить на его
+// место и запустить (без PowerShell).
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -110,6 +111,15 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
   const exePath = process.env.PORTABLE_EXECUTABLE_FILE || '';
   const portable = Boolean(exePath) && fs.existsSync(exePath);
   const pending = portable ? path.join(path.dirname(exePath), 'PhoenixLauncher.update.exe') : '';
+  // прежняя версия после обновления (запущенный exe переименовывается - удалить его можно только после выхода)
+  const old = portable ? path.join(path.dirname(exePath), 'PhoenixLauncher.old.exe') : '';
+  if (old && fs.existsSync(old)) {
+    try {
+      fs.unlinkSync(old);
+    } catch {
+      /* ещё занят закрывающимся экземпляром - удалится при следующем запуске */
+    }
+  }
   let status = { state: portable ? 'idle' : 'dev', current: appVersion };
   let busy = false;
 
@@ -180,24 +190,30 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
     set({ state: 'ready', percent: 100, ...info });
   }
 
-  // Подмена файла после выхода: ждём, пока PhoenixLauncher.exe освободится, переносим новый поверх, запускаем.
+  // Установка без скрытого PowerShell (его антивирусы считают признаком вредоноса): запущенный PhoenixLauncher.exe
+  // Windows разрешает переименовать - он становится PhoenixLauncher.old.exe (удаляется при следующем запуске),
+  // новый ставится на его место и запускается напрямую с --after-update (ждёт, пока этот экземпляр закроется).
   function install(app) {
     if (status.state !== 'ready' || !fs.existsSync(pending)) return { ok: false, error: 'Обновление ещё не скачано' };
-    const ps = [
-      '$ErrorActionPreference = "SilentlyContinue"',
-      `$src = '${pending.replace(/'/g, "''")}'`,
-      `$dst = '${exePath.replace(/'/g, "''")}'`,
-      'for ($i = 0; $i -lt 120; $i++) {',
-      '  try { Move-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop; break } catch { Start-Sleep -Milliseconds 500 }',
-      '}',
-      'Start-Process -FilePath $dst',
-    ].join('\n');
-    const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', ps], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    child.unref();
+    try {
+      fs.rmSync(old, { force: true });
+    } catch {
+      /* старый ещё занят - переименование ниже его заменит или сообщит об ошибке */
+    }
+    try {
+      fs.renameSync(exePath, old);
+    } catch (e) {
+      return { ok: false, error: `Не удалось заменить файл лаунчера (${e.code || e.message}). Скачайте новую версию с GitHub.` };
+    }
+    try {
+      fs.renameSync(pending, exePath);
+    } catch (e) {
+      try {
+        fs.renameSync(old, exePath);
+      } catch {}
+      return { ok: false, error: `Не удалось установить обновление (${e.code || e.message}). Скачайте новую версию с GitHub.` };
+    }
+    spawn(exePath, ['--after-update'], { cwd: path.dirname(exePath), detached: true, stdio: 'ignore' }).unref();
     setTimeout(() => app.exit(0), 300);
     return { ok: true };
   }

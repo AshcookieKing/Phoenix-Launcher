@@ -1,6 +1,6 @@
 {
   "name": "phoenix-launcher",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "Phoenix Launcher — Arma 3 Star Wars RP",
   "author": "Phoenix",
   "main": "electron/main.cjs",
@@ -28,6 +28,10 @@
       {
         "from": "preset",
         "to": "preset"
+      },
+      {
+        "from": "native/steam_ticket.exe",
+        "to": "steam_ticket.exe"
       }
     ],
     "asar": true,

@@ -59,10 +59,13 @@ function makeCode() {
 
 // Код привязки: phx_roleapi запоминает SteamID, страница бота подтверждает его через Discord OAuth
 // token - ключ лаунчера: phx_roleapi хранит его sha256 при подтверждении, «Выйти» удаляет привязку только с ним
-async function startMenuPair(steamId) {
+// ticket - Steam-билет Arma 3 (steam-ticket.cjs): phx_roleapi проверяет его в Steam, и бот не просит вход в Steam в браузере
+async function startMenuPair(steamId, ticket = '') {
   const code = makeCode();
   const token = crypto.randomBytes(32).toString('hex');
-  const res = await request(`${ROLE_API}/menu/pair`, { method: 'POST', body: { steam: steamId, code, token } });
+  const body = { steam: steamId, code, token };
+  if (ticket) body.ticket = ticket;
+  const res = await request(`${ROLE_API}/menu/pair`, { method: 'POST', body });
   if (res.status !== 200 || !res.data?.ok) {
     return { ok: false, error: res.data?.error === 'rate' ? 'Слишком много попыток, подождите минуту' : 'Сервер ролей недоступен' };
   }

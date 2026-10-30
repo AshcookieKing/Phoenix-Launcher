@@ -50,7 +50,10 @@ function runSteamUrl(url, config) {
     spawn(steamExe, ['-silent', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
     return;
   }
-  spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  // без скрытого cmd: ссылку steam:// открывает Windows
+  try {
+    require('electron').shell.openExternal(url).catch(() => {});
+  } catch {}
 }
 
 function subscribeWorkshopItem(workshopId, config) {

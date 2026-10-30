@@ -11,6 +11,7 @@ const { listPlayerProfiles } = require('./arma-profiles.cjs');
 const { queryServer } = require('./a2s.cjs');
 const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
+const { getSteamTicket, releaseSteamTicket } = require('./steam-ticket.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { SERVERS, LINKS } = require('./phx-config.cjs');
 const { connectTeamSpeak, ensureTeamSpeak, ensureTfarPlugin, ts3Running } = require('./teamspeak.cjs');
@@ -238,6 +239,7 @@ async function getAccount(force = false) {
 function stopPairPolling() {
   if (pairPollTimer) clearInterval(pairPollTimer);
   pairPollTimer = null;
+  releaseSteamTicket();
 }
 
 function createWindow() {
@@ -279,7 +281,18 @@ function createWindow() {
 
 // Один экземпляр: повторный запуск exe возвращает спрятанное окно (пока идёт игра)
 // самопроверка (PHX_SELFTEST) идёт и рядом с открытым лаунчером
-if (!process.env.PHX_SELFTEST && !app.requestSingleInstanceLock()) {
+// после обновления (--after-update) прежний экземпляр ещё закрывается - подождать его до 10 с, а не выходить
+function singleInstanceLock() {
+  if (app.requestSingleInstanceLock()) return true;
+  if (!process.argv.includes('--after-update')) return false;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (let i = 0; i < 20; i++) {
+    Atomics.wait(pause, 0, 0, 500);
+    if (app.requestSingleInstanceLock()) return true;
+  }
+  return false;
+}
+if (!process.env.PHX_SELFTEST && !singleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -409,12 +422,26 @@ ipcMain.handle('get-account', (_, { force = false } = {}) => getAccount(force));
 
 // Привязка Discord к меню Phoenix: тот же путь, что у кнопки «Войти через Discord» в игре
 ipcMain.handle('menu-pair-start', async () => {
-  const steam = await getSteamUser({ force: true });
-  if (!steam) return { ok: false, error: 'Не найден аккаунт Steam. Запустите Steam и войдите.' };
-  const pair = await startMenuPair(steam.steamId);
-  if (!pair.ok) return pair;
-  shell.openExternal(pair.url);
   stopPairPolling();
+  let steam = await getSteamUser({ force: true });
+  // Steam-билет Arma 3: Steam подтверждает аккаунт сам (как в игре), без входа в Steam в браузере. Steam ID - того
+  // аккаунта, в котором Steam сейчас запущен (loginusers.vdf может указать на другой). Не вышло - вход по-старому.
+  const armaExe = getConfig().armaExe;
+  const proof = armaExe ? await getSteamTicket(path.dirname(armaExe), { holdSeconds: 25 }) : { ok: false, error: 'no_arma' };
+  if (proof.ok) {
+    steam = { ...(steam && steam.steamId === proof.steamId ? steam : {}), steamId: proof.steamId };
+  } else {
+    console.warn('[pair] Steam ticket unavailable:', proof.error);
+  }
+  if (!steam) return { ok: false, error: 'Не найден аккаунт Steam. Запустите Steam и войдите.' };
+  const pair = await startMenuPair(steam.steamId, proof.ok ? proof.ticket : '');
+  if (!pair.ok) {
+    releaseSteamTicket();
+    return pair;
+  }
+  shell.openExternal(pair.url);
+  // помощник с билетом живёт сам (25 с - phx_roleapi проверяет билет до 20 с) - здесь только таймер опроса
+  if (pairPollTimer) clearInterval(pairPollTimer);
   const started = Date.now();
   pairPollTimer = setInterval(async () => {
     if (Date.now() - started > pair.expiresIn * 1000) {

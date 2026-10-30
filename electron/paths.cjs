@@ -1,42 +1,33 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 
 const ARMA_APP_ID = '107410';
 
-function readRegistryPaths() {
+// Одно значение реестра через reg.exe (без PowerShell: скрытый PowerShell антивирусы считают признаком вредоноса)
+function regValue(key, name) {
   return new Promise((resolve) => {
-    if (process.platform !== 'win32') {
-      resolve({});
-      return;
-    }
-    const ps = `
-      $steam = (Get-ItemProperty -Path 'HKCU:\\Software\\Valve\\Steam' -ErrorAction SilentlyContinue).SteamPath
-      $arma = @(
-        'HKLM:\\SOFTWARE\\WOW6432Node\\Bohemia Interactive\\Arma 3',
-        'HKLM:\\SOFTWARE\\Bohemia Interactive\\Arma 3'
-      ) | ForEach-Object {
-        try { (Get-ItemProperty $_).main } catch {}
-      } | Where-Object { $_ } | Select-Object -First 1
-      @{ steam = $steam; arma = $arma } | ConvertTo-Json -Compress
-    `;
-    exec(`powershell -NoProfile -Command "${ps.replace(/"/g, '\\"')}"`, { encoding: 'utf8' }, (err, stdout) => {
-      if (err || !stdout?.trim()) {
-        resolve({});
+    execFile('reg', ['query', key, '/v', name], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (err, stdout) => {
+      if (err || !stdout) {
+        resolve('');
         return;
       }
-      try {
-        const data = JSON.parse(stdout.trim());
-        resolve({
-          steamPath: data.steam?.replace(/\\\\/g, '\\'),
-          armaPath: data.arma?.replace(/\\\\/g, '\\'),
-        });
-      } catch {
-        resolve({});
-      }
+      const m = stdout.match(new RegExp(`^\\s*${name}\\s+REG_(?:EXPAND_)?SZ\\s+(.+?)\\s*$`, 'im'));
+      resolve(m ? m[1] : '');
     });
   });
+}
+
+async function readRegistryPaths() {
+  if (process.platform !== 'win32') return {};
+  const steamPath = await regValue('HKCU\\Software\\Valve\\Steam', 'SteamPath');
+  let armaPath = '';
+  for (const key of ['HKLM\\SOFTWARE\\WOW6432Node\\Bohemia Interactive\\Arma 3', 'HKLM\\SOFTWARE\\Bohemia Interactive\\Arma 3']) {
+    armaPath = await regValue(key, 'main');
+    if (armaPath) break;
+  }
+  return { steamPath: steamPath || undefined, armaPath: armaPath || undefined };
 }
 
 function parseLibraryFolders(steamPath) {
