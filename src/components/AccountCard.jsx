@@ -16,7 +16,7 @@ function maskSteam(id) {
   return id ? `${id.slice(0, 6)}…${id.slice(-4)}` : '';
 }
 
-export default function AccountCard({ api, account, onRefresh }) {
+export default function AccountCard({ api, account, onRefresh, compact = false }) {
   const [pair, setPair] = useState(null); // { code, url } | { error }
 
   useEffect(
@@ -107,6 +107,7 @@ export default function AccountCard({ api, account, onRefresh }) {
               <b className={roles.recruit ? 'txt-gold' : 'txt-ok'}>{roles.recruit ? 'Рекрут' : 'Discord ✓'}</b>
             </div>
           </div>
+          {!compact && (
           <div className="access">
             <span className="access-label">Доступ в меню персонажа</span>
             <div className="access-chips">
@@ -120,6 +121,7 @@ export default function AccountCard({ api, account, onRefresh }) {
               })}
             </div>
           </div>
+          )}
           {roles.pending && !pair?.code && <p className="account-note">В игре начат вход — подтвердите его в браузере.</p>}
           {!pair?.code && (
             <div className="account-actions">

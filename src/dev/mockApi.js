@@ -34,6 +34,30 @@ const account = {
   roles: { ok: true, linked, pending: false, rank: linked ? 'CPL' : '', battalion: linked ? '212' : '', recruit: false,
     roles: { bso: 0, jedi: 0, mercenary: 1, slot3: 0, arc: 1, rc: 0 } },
 };
+
+// HoloNet и персонажи для превью (вымышленные тексты, локальные картинки)
+const now = Date.now();
+const hnPost = (i, kicker, title, text, img) => ({
+  id: String(1000 + i), ts: new Date(now - i * 86400000 * 1.7 - 3600000).toISOString(), author: ['Бука', 'ZLOY', 'Lig Ness', 'Hog'][i % 4], avatar: '',
+  kicker, title, text, images: img ? [{ url: img, w: 2000, h: 752 }] : [], videos: i === 2 ? [{ kind: 'youtube', url: '#', title: 'Обращение генерала', thumb: './assets/background.jpg' }] : [], link: '#',
+});
+const holonet = {
+  channel: 'holonet', updatedAt: Math.floor(now / 1000) - 300, online: true,
+  posts: [
+    hnPost(0, '📰 ПЛАНЕТАРНЫЕ НОВОСТИ | ПРАВДА КХАРИСА', 'Нападение на корабли ВАР', '# 📰 ПЛАНЕТАРНЫЕ НОВОСТИ | ПРАВДА КХАРИСА\n\n**Нападение на корабли ВАР**\n\nВ ходе операции ВАР на планете Кхарис разведчики выявили скопление частных военных. Республика не успела реализовать разведданные из-за атаки наёмников на *венатор*. В ходе боестолкновения корабль был незначительно повреждён.\n\n━━━━━━━━━━━━━━━━━━━━\n## Что известно\n- Потери уточняются\n- Флот поднят по тревоге\n\n> Цитата офицера флота: «Необходимо установить режим усиленной безопасности»\n\n```diff\n+ Венатор на орбите\n- Связь с южным сектором потеряна\n```\n||Спойлер: это была проверка||', './assets/background.jpg'),
+    hnPost(1, '', '📡 ПЛАНЕТАРНОЕ ВЕЩАНИЕ // НОВОСТНОЙ ВЫПУСК', 'Всем снова привет! С вами планетарный репортёр, и сегодня у нас новости, от которых волосы дыбом.', ''),
+    hnPost(2, 'HoloNet News — Экстренный выпуск', '«Операция „Разлом“ завершена: первая крупная победа на Кхарисе»', 'Теперь этой цитадели больше нет. После прорыва периметра республиканские части вошли в город.', './assets/background.jpg'),
+    hnPost(3, 'Гарки', 'Информативная сводка для 13-го корпуса', 'Корпус вышел к северному очагу мятежа.', ''),
+    hnPost(4, '', 'Новости: Преступный картель ликвидирован', 'Сегодня утром правоохранительные органы провели масштабную операцию.', './assets/background.jpg'),
+  ],
+};
+const characters = {
+  ok: true, profile: '[212] CT 3472 IMA', updatedAt: now - 7200000, kitClass: '',
+  chars: new URLSearchParams(location.search).get('nochars') ? [] : [
+    { slot: 1, id: 'a', name: '[212] CT 3472 Ima', kind: 'cadet', kindLabel: 'Клон ВАР', rank: 'CT', claimPending: false, cloneNumber: '212-3472', battalion: '212', status: 'active', profile: '[212] CT 3472 Ima', profileId: 'x' },
+    { slot: 2, id: 'b', name: 'Рекс Вандар', kind: 'mercenary', kindLabel: 'Наёмник', rank: 'CPL', claimPending: true, cloneNumber: '', battalion: '', status: 'active', profile: '', profileId: '' },
+  ],
+};
 const noop = () => () => {};
 window.phoenix = {
   getSettings: async () => settings,
@@ -44,6 +68,12 @@ window.phoenix = {
   checkMods: async () => mods,
   syncMods: async () => ({ ok: true }),
   launch: async () => ({ ok: false, error: 'Заглушка браузера: запуск только в лаунчере' }),
+  launchCancel: async () => ({ ok: true }),
+  syncModsCancel: async () => ({ ok: true }),
+  onModsSync: () => () => {},
+  getCharacters: async () => characters,
+  getHoloNet: async () => holonet,
+  onHoloNet: () => () => {},
   getAccount: async () => account,
   menuPairStart: async () => ({ ok: true, code: 'K7M2QX', url: '#' }),
   menuPairCancel: async () => ({ ok: true }),

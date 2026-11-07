@@ -24,6 +24,8 @@ module.exports = {
     },
   ],
   BOT_API: `http://${PHX_HOST}:5003`,
+  // лента HoloNet: канал Discord Phoenix читает бот «Phoenix | Online Bot» на хосте Phoenix (host\holonet_feed.py)
+  HOLONET_API: 'http://109.248.4.239:8795/api/holonet',
   ROLE_API: `http://${PHX_HOST}:8792`,
   MENU_LOGIN_URL: `https://phoenixrp.ru/phx/menu/login?code=`,
   LINKS: {

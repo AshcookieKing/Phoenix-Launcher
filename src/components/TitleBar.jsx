@@ -1,7 +1,9 @@
-import { IconClose, IconDiscord, IconDownload, IconHeadset, IconHome, IconMinimize, IconMods, IconSettings, IconSystems } from './Icons';
+import { IconClose, IconDiscord, IconDownload, IconHeadset, IconHolo, IconHome, IconMinimize, IconMods, IconSettings, IconSystems, IconUser } from './Icons';
 
 const TABS = [
   { id: 'home', label: 'Главная', Icon: IconHome },
+  { id: 'characters', label: 'Персонажи', Icon: IconUser },
+  { id: 'holonet', label: 'HoloNet', Icon: IconHolo },
   { id: 'mods', label: 'Моды', Icon: IconMods },
   { id: 'systems', label: 'Системы', Icon: IconSystems },
   { id: 'settings', label: 'Настройки', Icon: IconSettings },
@@ -53,13 +55,11 @@ export default function TitleBar({ view, onView, links, api, update }) {
             <span>{update.state === 'installed' ? `Перезапустить: ${update.latest}` : `Обновить до ${update.latest}`}</span>
           </button>
         )}
-        <button type="button" className="chip-btn" onClick={() => api.openUrl(links.discord)} title="Discord Phoenix">
-          <IconDiscord size={16} />
-          <span>Discord</span>
+        <button type="button" className="chip-btn chip-icon" onClick={() => api.openUrl(links.discord)} title="Discord Phoenix" aria-label="Discord Phoenix">
+          <IconDiscord size={17} />
         </button>
-        <button type="button" className="chip-btn" onClick={() => api.tsConnect()} title={`TeamSpeak Phoenix: ${links.teamspeakHost}`}>
-          <IconHeadset size={16} />
-          <span>TeamSpeak</span>
+        <button type="button" className="chip-btn chip-icon" onClick={() => api.tsConnect()} title={`TeamSpeak Phoenix: ${links.teamspeakHost}`} aria-label="TeamSpeak Phoenix">
+          <IconHeadset size={17} />
         </button>
         <button type="button" className="win-btn" onClick={() => api.minimize()} aria-label="Свернуть">
           <IconMinimize size={16} />

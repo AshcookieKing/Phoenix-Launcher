@@ -1,5 +1,7 @@
 import AccountCard from './AccountCard';
 import ServerCard from './ServerCard';
+import { CharactersMini } from './Characters';
+import { HoloNetHero } from './HoloNet';
 import { IconAlert, IconFolder, IconRefresh } from './Icons';
 
 export default function HomeView({
@@ -7,11 +9,16 @@ export default function HomeView({
   settings,
   servers,
   account,
+  characters,
+  holonet,
   launching,
   onConnect,
   onRefreshAccount,
   onApplySettings,
   onOpenSettings,
+  onOpenCharacters,
+  onOpenHoloNet,
+  onReadPost,
 }) {
   const detect = async () => {
     const res = await api.autoDetectPaths();
@@ -30,7 +37,8 @@ export default function HomeView({
         <div className="hero-logo">
           <img src="./assets/phoenix_logo.png" alt="Arma Phoenix — Star Wars RP" />
         </div>
-        <AccountCard api={api} account={account} onRefresh={onRefreshAccount} />
+        <AccountCard api={api} account={account} onRefresh={onRefreshAccount} compact />
+        <CharactersMini data={characters} onOpen={onOpenCharacters} />
       </section>
 
       <section className="home-right">
@@ -52,6 +60,8 @@ export default function HomeView({
             </button>
           </div>
         )}
+
+        <HoloNetHero feed={holonet} onOpen={onReadPost} onAll={onOpenHoloNet} />
 
         <div className="servers-head">
           <h2>Серверы Phoenix</h2>

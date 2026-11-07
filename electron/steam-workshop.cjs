@@ -56,41 +56,27 @@ function runSteamUrl(url, config) {
   } catch {}
 }
 
-function subscribeWorkshopItem(workshopId, config) {
+// Подписка и загрузка - только через Steam API (workshop-ugc.cjs): ссылок steam://subscribe у Steam нет.
+// Здесь - запасной путь: страница мода в клиенте Steam (кнопка «Подписаться» там).
+function openWorkshopPage(workshopId, config) {
   const id = String(workshopId || '').trim();
-  if (!id) return;
-  runSteamUrl(`steam://subscribe/${ARMA_APP_ID}/${id}`, config);
+  if (/^\d+$/.test(id)) runSteamUrl(`steam://url/CommunityFilePage/${id}`, config);
 }
 
-function downloadWorkshopItem(workshopId, config) {
-  const id = String(workshopId || '').trim();
-  if (!id) return;
-  runSteamUrl(`steam://installworkshop/${ARMA_APP_ID}/${id}`, config);
-}
-
-async function syncWorkshopItems(workshopIds, config, { onBatch, delayMs = 250 } = {}) {
-  const ids = [...new Set(workshopIds.map((id) => String(id).trim()).filter(Boolean))];
+async function syncWorkshopItems(workshopIds, config) {
+  const ids = [...new Set(workshopIds.map((id) => String(id).trim()).filter(Boolean))].slice(0, 5);
   if (!ids.length) return { requested: 0 };
-
   await ensureSteamClient(config);
-
-  for (let i = 0; i < ids.length; i++) {
-    const id = ids[i];
-    subscribeWorkshopItem(id, config);
-    await sleep(delayMs);
-    downloadWorkshopItem(id, config);
-    await sleep(delayMs);
-    onBatch?.(i + 1, ids.length, id);
+  for (const id of ids) {
+    openWorkshopPage(id, config);
+    await sleep(400);
   }
-
-  await sleep(3000);
   return { requested: ids.length };
 }
 
 module.exports = {
   resolveSteamExe,
   ensureSteamClient,
-  subscribeWorkshopItem,
-  downloadWorkshopItem,
+  openWorkshopPage,
   syncWorkshopItems,
 };

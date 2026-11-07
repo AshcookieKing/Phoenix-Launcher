@@ -1,6 +1,6 @@
 import { IconAlert, IconCheck, IconDownload, IconMods, IconPlay } from './Icons';
 
-export default function LaunchDock({ launch, modSummary, modsChecking, pathsValid, onPlay, onOpenMods, onOpenSettings }) {
+export default function LaunchDock({ launch, modSummary, modsChecking, pathsValid, onPlay, onCancel, onOpenMods, onOpenSettings }) {
   const busy = launch.phase === 'preparing';
   const running = launch.phase === 'running';
 
@@ -40,6 +40,11 @@ export default function LaunchDock({ launch, modSummary, modsChecking, pathsVali
         <div className="dock-message">
           <span className={launch.phase === 'error' ? 'txt-bad' : ''}>{launch.message}</span>
           {busy && <em>{Math.round(launch.percent)}%</em>}
+          {busy && (
+            <button type="button" className="btn btn-link dock-cancel" onClick={onCancel}>
+              Отмена
+            </button>
+          )}
         </div>
         <div className="progress">
           <span style={{ width: `${busy || running ? launch.percent : 0}%` }} />

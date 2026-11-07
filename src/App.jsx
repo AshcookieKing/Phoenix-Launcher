@@ -7,6 +7,8 @@ import SystemsView from './components/SystemsView';
 import SettingsView from './components/SettingsView';
 import LaunchDock from './components/LaunchDock';
 import AuthGate from './components/AuthGate';
+import CharactersView from './components/Characters';
+import HoloNetView, { HoloNetReader } from './components/HoloNet';
 import { bindUiSounds } from './utils/uiSounds';
 
 // Мост preload (window.phoenix); читается лениво — в браузерном превью заглушка подключается после импорта модуля
@@ -23,6 +25,9 @@ export default function App() {
   const [launch, setLaunch] = useState(IDLE);
   const [authAsk, setAuthAsk] = useState(null); // { serverId } - запуск ждёт входа через Discord
   const [update, setUpdate] = useState(null); // автообновление из релизов GitHub
+  const [holonet, setHolonet] = useState(null); // лента HoloNet из Discord Phoenix
+  const [reading, setReading] = useState(null); // пост HoloNet, открытый с главной
+  const [characters, setCharacters] = useState(null); // персонажи меню Phoenix из профиля Arma
 
   const refreshMods = useCallback(async (force = false) => {
     setModsChecking(true);
@@ -37,29 +42,48 @@ export default function App() {
     setAccount(await api.getAccount({ force }));
   }, []);
 
+  const refreshCharacters = useCallback(async () => {
+    setCharacters(await api.getCharacters());
+  }, []);
+
+  const refreshHolonet = useCallback(async (force = false) => {
+    const feed = await api.getHoloNet({ force });
+    if (feed) setHolonet(feed);
+  }, []);
+
   useEffect(() => {
     (async () => {
       const s = await api.getSettings();
       setSettings(s);
       api.getServers().then(setServers).catch(() => {});
       refreshAccount();
+      refreshCharacters();
+      refreshHolonet();
       if (s.pathsValid) refreshMods();
       api.getUpdateStatus().then(setUpdate).catch(() => {});
     })();
     const offs = [
       api.onServers(setServers),
       api.onAccount(setAccount),
+      api.onHoloNet((feed) => feed && setHolonet((prev) => ({ ...prev, ...feed, online: true }))),
       api.onUpdateStatus(setUpdate),
       api.onLaunchProgress((p) => setLaunch((prev) => ({ ...prev, ...p, phase: 'preparing' }))),
       api.onLaunchRunning(() => setLaunch({ percent: 100, message: 'Игра запущена · удачной службы', phase: 'running' })),
-      api.onLaunchReset(() => setLaunch(IDLE)),
+      api.onLaunchReset(() => {
+        setLaunch(IDLE);
+        refreshCharacters();
+      }),
     ];
     const accountTimer = setInterval(() => refreshAccount(), 90000);
+    // персонажи меняются в игре (профиль Arma сохраняется при выходе) - перечитать, когда окно снова в фокусе
+    const onFocus = () => refreshCharacters();
+    window.addEventListener('focus', onFocus);
     return () => {
       offs.forEach((off) => off?.());
       clearInterval(accountTimer);
+      window.removeEventListener('focus', onFocus);
     };
-  }, [refreshAccount, refreshMods]);
+  }, [refreshAccount, refreshMods, refreshCharacters, refreshHolonet]);
 
   useEffect(() => {
     if (settings?.soundsEnabled === false) return undefined;
@@ -67,23 +91,26 @@ export default function App() {
   }, [settings?.soundsEnabled]);
 
   const startGame = useCallback(
-    async (serverId = null, { skipAuth = false } = {}) => {
+    async (serverId = null, { skipAuth = false, profileName = '' } = {}) => {
       if (launch.phase === 'preparing') return;
       // Discord не привязан - сначала предложить вход (тогда меню в игре войдёт само)
       if (!skipAuth && account?.steam && account.roles?.ok && !account.roles.linked) {
-        setAuthAsk({ serverId });
+        setAuthAsk({ serverId, profileName });
         return;
       }
       setAuthAsk(null);
       setLaunch({ percent: 1, message: 'Подготовка…', phase: 'preparing' });
-      const res = await api.launch({ serverId });
+      const res = await api.launch({ serverId, profileName });
       if (!res.ok) {
-        setLaunch({ percent: 0, message: res.error || 'Ошибка запуска', phase: 'error' });
+        setLaunch(res.cancelled ? IDLE : { percent: 0, message: res.error || 'Ошибка запуска', phase: 'error' });
         refreshMods(true);
       }
     },
     [launch.phase, refreshMods, account]
   );
+
+  // «Играть» на карточке персонажа: игра под профилем Arma с его именем
+  const playCharacter = useCallback((char) => startGame(null, { profileName: char.profile || '' }), [startGame]);
 
   const saveSettings = useCallback(async (patch) => {
     const next = await api.saveSettings(patch);
@@ -131,12 +158,29 @@ export default function App() {
             settings={settings}
             servers={servers}
             account={account}
+            characters={characters}
+            holonet={holonet}
             launching={launch.phase === 'preparing'}
             onConnect={(id) => startGame(id)}
             onRefreshAccount={() => refreshAccount(true)}
             onApplySettings={applySettings}
             onOpenSettings={() => setView('settings')}
+            onOpenCharacters={() => setView('characters')}
+            onOpenHoloNet={() => setView('holonet')}
+            onReadPost={setReading}
           />
+        )}
+        {view === 'characters' && (
+          <CharactersView
+            data={characters}
+            roles={account?.roles}
+            busy={launch.phase === 'preparing' || launch.phase === 'running' || !settings.pathsValid}
+            onRefresh={refreshCharacters}
+            onPlay={playCharacter}
+          />
+        )}
+        {view === 'holonet' && (
+          <HoloNetView api={api} feed={holonet} links={settings.links} onRefresh={() => refreshHolonet(true)} />
         )}
         {view === 'mods' && (
           <ModsView
@@ -160,6 +204,7 @@ export default function App() {
         modsChecking={modsChecking}
         pathsValid={settings.pathsValid}
         onPlay={() => startGame(null)}
+        onCancel={() => api.launchCancel()}
         onOpenMods={() => setView('mods')}
         onOpenSettings={() => setView('settings')}
       />
@@ -168,12 +213,13 @@ export default function App() {
           api={api}
           onLinked={() => {
             refreshAccount(true);
-            startGame(authAsk.serverId, { skipAuth: true });
+            startGame(authAsk.serverId, { skipAuth: true, profileName: authAsk.profileName });
           }}
-          onSkip={() => startGame(authAsk.serverId, { skipAuth: true })}
+          onSkip={() => startGame(authAsk.serverId, { skipAuth: true, profileName: authAsk.profileName })}
           onCancel={() => setAuthAsk(null)}
         />
       )}
+      <HoloNetReader post={reading} api={api} onClose={() => setReading(null)} />
     </div>
   );
 }

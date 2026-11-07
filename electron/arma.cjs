@@ -205,6 +205,28 @@ function findModRoot(workshopFolder) {
   return workshopFolder;
 }
 
+// WorkshopItemDetails: manifest (стоит) и latest_manifest (последняя в Workshop) - разные = мод устарел
+function parseAcfOutdated(config) {
+  const set = new Set();
+  const files = new Set(getWorkshopLibraries(config).map((lib) => path.join(lib, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`)));
+  if (config.acfPath) files.add(config.acfPath);
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    const at = text.indexOf('"WorkshopItemDetails"');
+    if (at < 0) continue;
+    const re = /"(\d+)"\s*\{([^}]*)\}/g;
+    re.lastIndex = at;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const cur = m[2].match(/"manifest"\s+"(\d+)"/);
+      const latest = m[2].match(/"latest_manifest"\s+"(\d+)"/);
+      if (cur && latest && latest[1] !== '0' && cur[1] !== latest[1]) set.add(m[1]);
+    }
+  }
+  return set;
+}
+
 function parseAcfTimes(acfPath) {
   const map = new Map();
   if (!fs.existsSync(acfPath)) return map;
@@ -276,6 +298,7 @@ async function checkMods(mods, config, { force = false } = {}) {
   }
 
   const acfTimes = parseAllAcfTimes(config);
+  const acfOutdated = parseAcfOutdated(config);
   const remote = await fetchSteamFileDetails(mods.map((m) => m.workshopId));
 
   const results = mods.map((mod) => {
@@ -287,11 +310,12 @@ async function checkMods(mods, config, { force = false } = {}) {
     const remoteTime = remote[mod.workshopId]?.timeUpdated || 0;
     let status = 'missing';
     if (exists && modPath) {
-      status = remoteTime > localTime + 120 ? 'outdated' : 'ok';
+      status = remoteTime > localTime + 120 || acfOutdated.has(mod.workshopId) ? 'outdated' : 'ok';
     } else if (exists) {
       status = 'missing';
     }
-    return { ...mod, status, path: modPath, localTime, remoteTime, folder };
+    const title = remote[mod.workshopId]?.title;
+    return { ...mod, name: mod.name || title || mod.workshopId, title, status, path: modPath, localTime, remoteTime, folder };
   });
 
   modCheckCache = { key: cacheKey, at: Date.now(), results };

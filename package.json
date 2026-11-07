@@ -32,6 +32,10 @@
       {
         "from": "native/steam_ticket.exe",
         "to": "steam_ticket.exe"
+      },
+      {
+        "from": "native/steam_workshop.exe",
+        "to": "steam_workshop.exe"
       }
     ],
     "asar": true,

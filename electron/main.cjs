@@ -6,9 +6,11 @@ const Store = require('electron-store');
 const { loadPreset, resolvePresetPath } = require('./preset.cjs');
 const { derivePathsFromArmaExe, validateGamePaths, detectGamePaths, ARMA_APP_ID } = require('./paths.cjs');
 const arma = require('./arma.cjs');
-const { prepareAndLaunch } = require('./launch.cjs');
+const { prepareAndLaunch, syncWorkshop } = require('./launch.cjs');
 const { listPlayerProfiles } = require('./arma-profiles.cjs');
-const { queryServer } = require('./a2s.cjs');
+const { queryServer, queryServerMods } = require('./a2s.cjs');
+const { readCharacters } = require('./characters.cjs');
+const { createHoloNet } = require('./holonet.cjs');
 const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
 const { getSteamTicket, releaseSteamTicket } = require('./steam-ticket.cjs');
@@ -73,6 +75,12 @@ let gameWatchTimer = null;
 let pairPollTimer = null;
 let armaRunningCache = { at: 0, value: false };
 let appQuitting = false;
+let launchControl = null;   // { cancel } - запуск (ждёт загрузку модов Steam)
+let syncControl = null;     // { cancel } - «Скачать» на вкладке «Моды»
+let holonet = null;
+// моды, которые требует сервер (A2S_RULES): { [serverId]: { at, mods: [{ workshopId, name }] } }
+const serverMods = { ...(store.get('serverMods') || {}) };
+const MODS_REFRESH_MS = 5 * 60000;
 
 function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
@@ -188,6 +196,39 @@ function loadModsList() {
   return cachedMods;
 }
 
+// Моды для запуска: свой пресет игрока, иначе список, который требует сам сервер (A2S_RULES - всегда актуален,
+// даже если Phoenix поменял сборку), иначе встроенный пресет. Имена - из пресета, если мод там есть.
+function getModList(serverId = 'farabad') {
+  if (!cachedMods.length) loadModsList();
+  if (store.get('presetPath')) return { source: 'preset-custom', mods: cachedMods };
+  const live = serverMods[serverId]?.mods?.length ? serverMods[serverId] : serverMods.farabad;
+  if (!live?.mods?.length) return { source: 'preset', mods: cachedMods };
+  const names = new Map(cachedMods.map((m) => [m.workshopId, m.name]));
+  return {
+    source: 'server',
+    at: live.at,
+    mods: live.mods.map((m) => ({
+      workshopId: m.workshopId,
+      name: names.get(m.workshopId) || m.name,
+      steamUrl: `https://steamcommunity.com/sharedfiles/filedetails/?id=${m.workshopId}`,
+    })),
+  };
+}
+
+async function refreshServerMods(force = false) {
+  await Promise.all(
+    SERVERS.map(async (s) => {
+      if (!force && Date.now() - (serverMods[s.id]?.at || 0) < MODS_REFRESH_MS) return;
+      if (serversState[s.id] && serversState[s.id].status !== 'online') return;
+      try {
+        const mods = await queryServerMods(s.host, s.queryPort);
+        if (mods.length) serverMods[s.id] = { at: Date.now(), mods };
+      } catch {}
+    })
+  );
+  store.set('serverMods', serverMods);
+}
+
 function settingsPayload() {
   const p = cachedPaths || {};
   return {
@@ -195,7 +236,8 @@ function settingsPayload() {
     appVersion: APP_VERSION,
     presetPath: getPresetPath(),
     customPreset: Boolean(store.get('presetPath')),
-    modCount: cachedMods.length,
+    modCount: getModList().mods.length,
+    modSource: getModList().source,
     paths: p,
     pathsValid: p.pathsValid === true,
     pathErrors: p.pathErrors || [],
@@ -215,6 +257,7 @@ async function pollServers() {
     serversState[s.id] = results[i];
   });
   send('servers-update', serversState);
+  refreshServerMods().catch(() => {});
   return serversState;
 }
 
@@ -310,8 +353,12 @@ app.whenReady().then(async () => {
     console.error(e);
   }
   await ensurePaths();
+  holonet = createHoloNet(store, (feed) => send('holonet-update', feed));
   createWindow();
-  mainWindow.webContents.once('did-finish-load', () => startServerPolling());
+  mainWindow.webContents.once('did-finish-load', () => {
+    startServerPolling();
+    holonet.start();
+  });
   updater = createUpdater({
     appVersion: APP_VERSION,
     onStatus: (s) => mainWindow?.webContents.send('update-status', s),
@@ -335,6 +382,9 @@ app.on('before-quit', () => {
   if (serverPollTimer) clearInterval(serverPollTimer);
   if (gameWatchTimer) clearInterval(gameWatchTimer);
   stopPairPolling();
+  holonet?.stop();
+  launchControl?.cancel?.();
+  syncControl?.cancel?.();
 });
 
 app.on('window-all-closed', () => {
@@ -365,30 +415,51 @@ ipcMain.handle('save-settings', async (_, next = {}) => {
 ipcMain.handle('get-servers', async () => (Object.keys(serversState).length ? serversState : pollServers()));
 ipcMain.handle('refresh-servers', () => pollServers());
 
-ipcMain.handle('get-mods', () => {
-  if (!cachedMods.length) loadModsList();
-  return cachedMods;
-});
+ipcMain.handle('get-mods', () => getModList().mods);
 
 ipcMain.handle('check-mods', async (_, { force = false } = {}) => {
-  if (!cachedMods.length) loadModsList();
+  if (force) await refreshServerMods(true).catch(() => {});
+  const { mods } = getModList();
   await ensurePaths();
   const config = getConfig();
-  if (!config.workshopDir) return cachedMods.map((m) => ({ ...m, status: 'missing' }));
-  return arma.checkMods(cachedMods, config, { force });
+  if (!config.workshopDir) return mods.map((m) => ({ ...m, status: 'missing' }));
+  return arma.checkMods(mods, config, { force });
 });
 
+// «Скачать» на вкладке «Моды»: подписка и загрузка через Steam API с прогрессом (без запуска игры)
 ipcMain.handle('sync-mods', async (_, ids = []) => {
+  if (syncControl || launchControl) return { ok: false, error: 'Загрузка уже идёт' };
   await ensurePaths();
-  await arma.openSteamSubscribe(ids, getConfig());
-  return { ok: true, requested: ids.length };
+  const config = getConfig();
+  const all = getModList().mods;
+  const want = ids.length ? all.filter((m) => ids.includes(m.workshopId)) : all;
+  syncControl = {};
+  try {
+    const onProgress = (percent, message) => send('mods-sync-progress', { percent, message });
+    const res = await syncWorkshop(want, config, onProgress, syncControl, { from: 0, to: 100 });
+    if (!res.ok && res.code === 'no_helper') {
+      // нет steam_api64.dll в папке Arma: открыть страницы модов в Steam (там «Подписаться»)
+      await arma.openSteamSubscribe(want.map((m) => m.workshopId), config);
+      return { ok: false, error: 'Steam API недоступен — открыли страницы модов в Steam: нажмите «Подписаться».' };
+    }
+    return { ok: res.ok, error: res.error, cancelled: res.cancelled };
+  } finally {
+    syncControl = null;
+    send('mods-sync-progress', null);
+  }
 });
 
-ipcMain.handle('launch', async (event, { serverId = null } = {}) => {
+ipcMain.handle('sync-mods-cancel', () => {
+  syncControl?.cancel?.();
+  return { ok: true };
+});
+
+ipcMain.handle('launch', async (event, { serverId = null, profileName = '' } = {}) => {
   if (isArmaRunning(true)) {
     return { ok: false, error: 'Arma 3 уже запущена — закройте игру или переключитесь на неё.' };
   }
-  if (!cachedMods.length) loadModsList();
+  if (launchControl) return { ok: false, error: 'Запуск уже идёт' };
+  syncControl?.cancel?.();
   await ensurePaths();
   const server = serverId ? SERVERS.find((s) => s.id === serverId) : null;
   const progress = (percent, message) => event.sender.send('launch-progress', { percent, message });
@@ -402,11 +473,14 @@ ipcMain.handle('launch', async (event, { serverId = null } = {}) => {
       const ts = await ensureTeamSpeak(LINKS.teamspeak, { onStep: (m) => progress(3, m) });
       if (ts.ok) progress(5, 'TeamSpeak подключён');
     }
+    launchControl = {};
     const result = await prepareAndLaunch({
-      mods: cachedMods,
+      mods: getModList(serverId || 'farabad').mods,
       config: getConfig(),
       server,
+      profileName: String(profileName || '').slice(0, 64),
       onProgress: progress,
+      control: launchControl,
     });
     if (result.ok) {
       watchGameProcess(result.pid);
@@ -415,7 +489,34 @@ ipcMain.handle('launch', async (event, { serverId = null } = {}) => {
     return result;
   } catch (e) {
     return { ok: false, error: e.message || 'Ошибка запуска' };
+  } finally {
+    launchControl = null;
   }
+});
+
+ipcMain.handle('launch-cancel', () => {
+  launchControl?.cancel?.();
+  return { ok: true };
+});
+
+// Персонажи меню Phoenix из профилей Arma (+ папка профиля, чтобы запустить игру под ним)
+ipcMain.handle('get-characters', () => {
+  try {
+    const res = readCharacters();
+    const profiles = listPlayerProfiles();
+    return {
+      ...res,
+      chars: res.chars.map((c) => ({ ...c, profileId: profiles.find((p) => p.displayName === c.profile)?.id || '' })),
+    };
+  } catch (e) {
+    return { ok: false, error: e.message, chars: [] };
+  }
+});
+
+ipcMain.handle('get-holonet', async (_, { force = false } = {}) => {
+  if (!holonet) return { posts: [] };
+  if (force || !holonet.get()) return holonet.refresh();
+  return holonet.get();
 });
 
 ipcMain.handle('get-account', (_, { force = false } = {}) => getAccount(force));

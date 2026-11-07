@@ -7,6 +7,7 @@ import '@fontsource/exo-2/600.css';
 import '@fontsource/exo-2/700.css';
 import App from './App';
 import './styles/app.css';
+import './styles/holonet.css';
 
 const boot = () =>
   ReactDOM.createRoot(document.getElementById('root')).render(

@@ -1,0 +1,7 @@
+{
+  "token_env": "C:/Users/Администратор/Desktop/GeraltBots/.env",
+  "token_key": "DISCORD_BOT_TOKEN",
+  "channel_id": "1320394505693958145",
+  "port": 8795,
+  "poll_sec": 120
+}
