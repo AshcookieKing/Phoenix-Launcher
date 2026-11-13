@@ -134,8 +134,8 @@ export default function SettingsView({ api, settings, onSave, onApplySettings, u
 
           <div className="field">
             <span>Профиль Arma</span>
-            <select value={settings.activeProfileId || ''} onChange={(e) => set({ activeProfileId: e.target.value })}>
-              <option value="">Профиль по умолчанию</option>
+            <select value={settings.profileMode === 'selected' ? settings.activeProfileId || '' : ''} onChange={(e) => set({ activeProfileId: e.target.value })}>
+              <option value="">Текущий профиль Arma 3</option>
               {settings.profiles.map((pr) => (
                 <option key={pr.id} value={pr.id}>
                   {pr.displayName}

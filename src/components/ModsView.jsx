@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { IconDownload, IconExternal, IconFolder, IconRefresh, IconSearch } from './Icons';
 
 const STATUS = {
@@ -9,13 +9,8 @@ const STATUS = {
 
 const ORDER = { missing: 0, outdated: 1, ok: 2 };
 
-export default function ModsView({ api, settings, mods, checking, onRefresh, onApplySettings }) {
+export default function ModsView({ api, settings, mods, checking, sync, syncError, launching, onDownload, onRefresh, onApplySettings }) {
   const [query, setQuery] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  const [sync, setSync] = useState(null); // { percent, message } - Steam качает моды
-  const [syncError, setSyncError] = useState('');
-
-  useEffect(() => api.onModsSync((p) => p && setSync(p)), [api]);
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -25,18 +20,6 @@ export default function ModsView({ api, settings, mods, checking, onRefresh, onA
   }, [mods, query]);
 
   const need = (mods || []).filter((m) => m.status !== 'ok');
-
-  // подписка и загрузка через Steam API: ждёт, пока Steam скачает всё, с прогрессом по байтам
-  const syncAll = async () => {
-    setSyncing(true);
-    setSyncError('');
-    setSync({ percent: 0, message: 'Steam: подписка на моды…' });
-    const res = await api.syncMods(need.map((m) => m.workshopId));
-    setSyncing(false);
-    setSync(null);
-    if (!res.ok && !res.cancelled) setSyncError(res.error || 'Steam не скачал моды');
-    onRefresh();
-  };
 
   const pickPreset = async () => {
     const res = await api.pickPresetFile();
@@ -54,17 +37,17 @@ export default function ModsView({ api, settings, mods, checking, onRefresh, onA
           <h1>Моды Phoenix</h1>
           <p>
             {settings.modSource === 'server'
-              ? `Сборка сервера Phoenix: ${settings.modCount} модов — список берётся прямо с сервера, поэтому всегда актуален.`
-              : `Пресет сборки: ${settings.modCount} модов.`}{' '}
+              ? `Сборка сервера Phoenix: ${mods?.length ?? settings.modCount} модов.`
+              : `Пресет сборки: ${mods?.length ?? settings.modCount} модов.`}{' '}
             Перед игрой лаунчер сам подписывается на недостающие моды в Steam и ждёт, пока они скачаются.
           </p>
         </div>
         <div className="page-actions">
-          <button type="button" className="btn btn-ghost" onClick={onRefresh} disabled={checking}>
+          <button type="button" className="btn btn-ghost" onClick={onRefresh} disabled={checking || Boolean(sync)}>
             <IconRefresh size={16} /> {checking ? 'Проверка…' : 'Проверить'}
           </button>
-          <button type="button" className="btn btn-fire" onClick={syncAll} disabled={!need.length || syncing}>
-            <IconDownload size={16} /> {syncing ? 'Steam качает…' : need.length ? `Скачать (${need.length})` : 'Всё установлено'}
+          <button type="button" className="btn btn-fire" onClick={onDownload} disabled={!need.length || Boolean(sync) || checking || launching || !settings.pathsValid}>
+            <IconDownload size={16} /> {sync ? 'Steam качает…' : need.length ? `Скачать (${need.length})` : checking || !mods?.length ? 'Скачать' : 'Всё установлено'}
           </button>
         </div>
       </div>
@@ -98,11 +81,11 @@ export default function ModsView({ api, settings, mods, checking, onRefresh, onA
         <span className="preset-info" title={settings.presetPath}>
           {settings.customPreset ? 'Свой пресет' : settings.modSource === 'server' ? 'Список с сервера Phoenix' : 'Встроенный пресет Phoenix'}
         </span>
-        <button type="button" className="btn btn-link" onClick={pickPreset}>
+        <button type="button" className="btn btn-link" disabled={Boolean(sync) || launching} onClick={pickPreset}>
           <IconFolder size={15} /> Другой пресет
         </button>
         {settings.customPreset && (
-          <button type="button" className="btn btn-link" onClick={resetPreset}>
+          <button type="button" className="btn btn-link" disabled={Boolean(sync) || launching} onClick={resetPreset}>
             Вернуть встроенный
           </button>
         )}

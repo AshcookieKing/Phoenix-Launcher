@@ -15,10 +15,16 @@ function udpRequest(host, port, payload, timeoutMs) {
     // длинный ответ (A2S_RULES с модами) приходит частями: заголовок -2, id, всего частей, номер, размер
     const parts = [];
     let total = 0;
+    let replyId;
     sock.on('message', (msg) => {
       if (msg.length >= 12 && msg.readInt32LE(0) === -2) {
+        const id = msg.readUInt32LE(4);
+        const index = msg[9];
+        if (!msg[8] || index >= msg[8]) return;
+        if (replyId !== undefined && (id !== replyId || total !== msg[8])) return;
+        replyId = id;
         total = msg[8];
-        parts[msg[9]] = msg.subarray(12);
+        parts[index] = msg.subarray(12);
         if (parts.filter(Boolean).length < total) return;
         msg = Buffer.concat(parts);
       }
@@ -132,42 +138,52 @@ function parseArmaMods(msg) {
   if (msg[4] !== 0x45) throw new Error('bad rules');
   const n = msg.readUInt16LE(5);
   let o = 7;
-  const chunks = [];
-  for (let i = 0; i < n && o < msg.length; i++) {
+  const chunks = new Map();
+  let pageCount = 0;
+  for (let i = 0; i < n; i++) {
     const kEnd = msg.indexOf(0, o);
+    if (kEnd < 0) throw new Error('incomplete rule key');
     const key = msg.subarray(o, kEnd);
     o = kEnd + 1;
     const vEnd = msg.indexOf(0, o);
-    const val = msg.subarray(o, vEnd < 0 ? msg.length : vEnd);
-    o = vEnd < 0 ? msg.length : vEnd + 1;
-    if (key.length === 2) chunks.push([key[0], val]);
+    if (vEnd < 0) throw new Error('incomplete rule value');
+    const val = msg.subarray(o, vEnd);
+    o = vEnd + 1;
+    if (key.length !== 2) continue;
+    const [page, total] = key;
+    if (!page || page > total || (pageCount && pageCount !== total)) throw new Error('invalid mod pages');
+    if (chunks.has(page) && !chunks.get(page).equals(val)) throw new Error('conflicting mod pages');
+    pageCount = total;
+    chunks.set(page, val);
   }
-  chunks.sort((a, b) => a[0] - b[0]);
-  const raw = Buffer.concat(chunks.map((c) => c[1]));
+  if (!pageCount || chunks.size !== pageCount) throw new Error('incomplete mod pages');
+  const raw = Buffer.concat(Array.from({ length: pageCount }, (_, i) => chunks.get(i + 1)));
   // экранирование: 01 01 -> 01, 01 02 -> 00, 01 03 -> FF
   const bytes = [];
   for (let i = 0; i < raw.length; i++) {
-    if (raw[i] === 1 && i + 1 < raw.length) {
+    if (raw[i] === 1) {
       const e = raw[++i];
-      bytes.push(e === 1 ? 1 : e === 2 ? 0 : e === 3 ? 0xff : e);
+      if (![1, 2, 3].includes(e)) throw new Error('invalid mod data escape');
+      bytes.push(e === 1 ? 1 : e === 2 ? 0 : 0xff);
     } else bytes.push(raw[i]);
   }
   const b = Buffer.from(bytes);
-  let p = 2; // версия, флаги переполнения
-  const dlcFlags = b.readUInt16LE(p);
-  p += 2;
+  if (b[0] !== 3 || (b[1] & 1)) throw new Error('incomplete or unsupported mod list');
+  const dlcFlags = b.readUInt16LE(2);
+  let p = 6; // версия, флаги, DLC, сложность и прицел
   for (let f = dlcFlags; f; f >>= 1) if (f & 1) p += 4; // хэши DLC
-  p += 2; // сложность, прицел
-  const count = b[p++];
+  const count = b.readUInt8(p++);
   const mods = [];
-  for (let i = 0; i < count && p < b.length; i++) {
+  for (let i = 0; i < count; i++) {
     p += 4; // хэш мода
-    const info = b[p++];
+    const info = b.readUInt8(p++);
     const idLen = info & 0x0f;
+    if (idLen > 8 || p + idLen > b.length) throw new Error('invalid mod id');
     let id = 0n;
     for (let j = 0; j < idLen; j++) id |= BigInt(b[p + j]) << (8n * BigInt(j));
     p += idLen;
-    const nameLen = b[p++];
+    const nameLen = b.readUInt8(p++);
+    if (p + nameLen > b.length) throw new Error('incomplete mod name');
     const name = b.toString('utf8', p, p + nameLen);
     p += nameLen;
     if (!(info & 0x10) && id > 0n) mods.push({ workshopId: id.toString(), name });
@@ -181,4 +197,4 @@ async function queryServerMods(host, queryPort, { timeoutMs = 4000 } = {}) {
   return parseArmaMods(msg);
 }
 
-module.exports = { queryServer, queryServerMods };
+module.exports = { queryServer, queryServerMods, parseArmaMods };

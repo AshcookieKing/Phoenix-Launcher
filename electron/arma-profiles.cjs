@@ -23,6 +23,11 @@ function decodeProfileName(name) {
   }
 }
 
+function launchProfileName(config, profiles) {
+  if (config.profileMode !== 'selected') return '';
+  return profiles.find((profile) => profile.id === config.activeProfileId)?.displayName || '';
+}
+
 function getOtherProfilesDir() {
   const dir = path.join(os.homedir(), 'Documents', 'Arma 3 - Other Profiles');
   return fs.existsSync(dir) ? dir : null;
@@ -118,4 +123,5 @@ module.exports = {
   pickActiveProfile,
   getArmaProfileInfo,
   decodeProfileName,
+  launchProfileName,
 };

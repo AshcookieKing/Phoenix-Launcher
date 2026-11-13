@@ -1,6 +1,6 @@
 import { IconAlert, IconCheck, IconDownload, IconMods, IconPlay } from './Icons';
 
-export default function LaunchDock({ launch, modSummary, modsChecking, pathsValid, onPlay, onCancel, onOpenMods, onOpenSettings }) {
+export default function LaunchDock({ launch, modSummary, modsChecking, syncing, pathsValid, onPlay, onCancel, onOpenMods, onOpenSettings }) {
   const busy = launch.phase === 'preparing';
   const running = launch.phase === 'running';
 
@@ -51,7 +51,7 @@ export default function LaunchDock({ launch, modSummary, modsChecking, pathsVali
         </div>
       </div>
 
-      <button type="button" className="btn-play" onClick={onPlay} disabled={busy || running || !pathsValid}>
+      <button type="button" className="btn-play" onClick={onPlay} disabled={busy || running || syncing || !pathsValid}>
         <span className="btn-play-fire" />
         <span className="btn-play-label">
           <IconPlay size={22} />

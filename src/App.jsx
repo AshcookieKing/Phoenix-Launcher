@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Background from './components/Background';
 import TitleBar from './components/TitleBar';
 import HomeView from './components/HomeView';
@@ -22,6 +22,9 @@ export default function App() {
   const [account, setAccount] = useState(null);
   const [mods, setMods] = useState(null);
   const [modsChecking, setModsChecking] = useState(false);
+  const checkSequence = useRef(0);
+  const [sync, setSync] = useState(null);
+  const [syncError, setSyncError] = useState('');
   const [launch, setLaunch] = useState(IDLE);
   const [authAsk, setAuthAsk] = useState(null); // { serverId } - запуск ждёт входа через Discord
   const [update, setUpdate] = useState(null); // автообновление из релизов GitHub
@@ -30,13 +33,35 @@ export default function App() {
   const [characters, setCharacters] = useState(null); // персонажи меню Phoenix из профиля Arma
 
   const refreshMods = useCallback(async (force = false) => {
+    const sequence = ++checkSequence.current;
     setModsChecking(true);
     try {
-      setMods(await api.checkMods({ force }));
+      const checked = await api.checkMods({ force });
+      if (sequence === checkSequence.current) setMods(checked);
+    } catch (e) {
+      if (sequence === checkSequence.current) {
+        setMods(null);
+        setSyncError(e.message || 'Не удалось проверить файлы модов');
+      }
     } finally {
-      setModsChecking(false);
+      if (sequence === checkSequence.current) setModsChecking(false);
     }
   }, []);
+
+  const downloadMods = async () => {
+    if (sync) return;
+    setSyncError('');
+    setSync({ percent: 0, message: 'Подготовка загрузки…' });
+    try {
+      const result = await api.syncMods();
+      if (!result.ok && !result.cancelled) setSyncError(result.error || 'Steam не скачал моды');
+    } catch (e) {
+      setSyncError(e.message || 'Ошибка загрузки модов');
+    } finally {
+      setSync(null);
+      refreshMods(true);
+    }
+  };
 
   const refreshAccount = useCallback(async (force = false) => {
     setAccount(await api.getAccount({ force }));
@@ -67,6 +92,7 @@ export default function App() {
       api.onAccount(setAccount),
       api.onHoloNet((feed) => feed && setHolonet((prev) => ({ ...prev, ...feed, online: true }))),
       api.onUpdateStatus(setUpdate),
+      api.onModsSync((p) => { if (p) setSync(p); }),
       api.onLaunchProgress((p) => setLaunch((prev) => ({ ...prev, ...p, phase: 'preparing' }))),
       api.onLaunchRunning(() => setLaunch({ percent: 100, message: 'Игра запущена · удачной службы', phase: 'running' })),
       api.onLaunchReset(() => {
@@ -103,14 +129,17 @@ export default function App() {
       const res = await api.launch({ serverId, profileName });
       if (!res.ok) {
         setLaunch(res.cancelled ? IDLE : { percent: 0, message: res.error || 'Ошибка запуска', phase: 'error' });
-        refreshMods(true);
       }
+      refreshMods(true);
     },
     [launch.phase, refreshMods, account]
   );
 
   // «Играть» на карточке персонажа: игра под профилем Arma с его именем
-  const playCharacter = useCallback((char) => startGame(null, { profileName: char.profile || '' }), [startGame]);
+  const playCharacter = useCallback(
+    (char) => startGame(null, { profileName: char.profile || characters?.profile || '' }),
+    [startGame, characters]
+  );
 
   const saveSettings = useCallback(async (patch) => {
     const next = await api.saveSettings(patch);
@@ -160,7 +189,7 @@ export default function App() {
             account={account}
             characters={characters}
             holonet={holonet}
-            launching={launch.phase === 'preparing'}
+            launching={Boolean(sync) || launch.phase === 'preparing'}
             onConnect={(id) => startGame(id)}
             onRefreshAccount={() => refreshAccount(true)}
             onApplySettings={applySettings}
@@ -174,7 +203,7 @@ export default function App() {
           <CharactersView
             data={characters}
             roles={account?.roles}
-            busy={launch.phase === 'preparing' || launch.phase === 'running' || !settings.pathsValid}
+            busy={Boolean(sync) || launch.phase === 'preparing' || launch.phase === 'running' || !settings.pathsValid}
             onRefresh={refreshCharacters}
             onPlay={playCharacter}
           />
@@ -188,6 +217,10 @@ export default function App() {
             settings={settings}
             mods={mods}
             checking={modsChecking}
+            sync={sync}
+            syncError={syncError}
+            launching={launch.phase === 'preparing'}
+            onDownload={downloadMods}
             onRefresh={() => refreshMods(true)}
             onApplySettings={applySettings}
           />
@@ -202,6 +235,7 @@ export default function App() {
         launch={launch}
         modSummary={modSummary}
         modsChecking={modsChecking}
+        syncing={Boolean(sync)}
         pathsValid={settings.pathsValid}
         onPlay={() => startGame(null)}
         onCancel={() => api.launchCancel()}

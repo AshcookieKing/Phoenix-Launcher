@@ -4,10 +4,10 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const Store = require('electron-store');
 const { loadPreset, resolvePresetPath } = require('./preset.cjs');
-const { derivePathsFromArmaExe, validateGamePaths, detectGamePaths, ARMA_APP_ID } = require('./paths.cjs');
+const { derivePathsFromArmaExe, validateGamePaths, detectGamePaths } = require('./paths.cjs');
 const arma = require('./arma.cjs');
 const { prepareAndLaunch, syncWorkshop } = require('./launch.cjs');
-const { listPlayerProfiles } = require('./arma-profiles.cjs');
+const { listPlayerProfiles, launchProfileName } = require('./arma-profiles.cjs');
 const { queryServer, queryServerMods } = require('./a2s.cjs');
 const { readCharacters } = require('./characters.cjs');
 const { createHoloNet } = require('./holonet.cjs');
@@ -28,7 +28,7 @@ app.setName('PhoenixLauncher');
 const STORE_KEYS = new Set([
   'armaExe', 'steamPath', 'workshopDir', 'pathsConfigured', 'presetPath',
   'autoUpdate', 'screenMode', 'optimizedLaunch', 'profilingLaunch', 'keepLogs', 'tsAutoConnect', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
-  'activeProfileId', 'playerName', 'selectedServer', 'soundsEnabled', 'minimizeOnLaunch', 'animationsEnabled',
+  'activeProfileId', 'profileMode', 'playerName', 'selectedServer', 'soundsEnabled', 'minimizeOnLaunch', 'animationsEnabled',
 ]);
 
 const store = new Store({
@@ -51,6 +51,7 @@ const store = new Store({
     extraLaunchArgs: '',
     skipLogos: false,
     activeProfileId: '',
+    profileMode: 'game',
     playerName: '',
     selectedServer: 'farabad',
     soundsEnabled: true,
@@ -75,8 +76,8 @@ let gameWatchTimer = null;
 let pairPollTimer = null;
 let armaRunningCache = { at: 0, value: false };
 let appQuitting = false;
-let launchControl = null;   // { cancel } - запуск (ждёт загрузку модов Steam)
-let syncControl = null;     // { cancel } - «Скачать» на вкладке «Моды»
+let launchControl = null;
+let syncControl = null;
 let holonet = null;
 // моды, которые требует сервер (A2S_RULES): { [serverId]: { at, mods: [{ workshopId, name }] } }
 const serverMods = { ...(store.get('serverMods') || {}) };
@@ -133,14 +134,9 @@ function watchGameProcess(pid) {
 
 // --- Пути к игре ---
 
-function buildPathPayload(resolved) {
-  const armaExe = store.get('armaExe') || resolved.armaExe || '';
-  const steamPath = store.get('steamPath') || resolved.steamPath || '';
-  const workshopDir = store.get('workshopDir') || resolved.workshopDir || '';
-  const acfPath =
-    resolved.acfPath || (steamPath ? path.join(steamPath, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`) : '');
+function buildPathPayload({ armaExe, steamPath, workshopDir, acfPath, libraries }) {
   const validation = validateGamePaths({ armaExe, workshopDir });
-  return { armaExe, steamPath, workshopDir, acfPath, pathsValid: validation.valid, pathErrors: validation.errors };
+  return { armaExe, steamPath, workshopDir, acfPath, libraries, pathsValid: validation.valid, pathErrors: validation.errors };
 }
 
 async function ensurePaths(force = false) {
@@ -165,11 +161,12 @@ async function ensurePaths(force = false) {
 function getConfig() {
   const p = cachedPaths || {};
   return {
-    armaExe: store.get('armaExe') || p.armaExe,
-    steamPath: store.get('steamPath') || p.steamPath,
-    workshopDir: store.get('workshopDir') || p.workshopDir,
+    armaExe: p.armaExe,
+    steamPath: p.steamPath,
+    workshopDir: p.workshopDir,
     acfPath: p.acfPath,
-    playerName: store.get('playerName'),
+    libraries: p.libraries,
+    playerName: launchProfileName(store.store, listPlayerProfiles()),
     screenMode: store.get('screenMode') || 'borderless',
     optimizedLaunch: store.get('optimizedLaunch') === true,
     profilingLaunch: store.get('profilingLaunch') !== false,
@@ -201,8 +198,9 @@ function loadModsList() {
 function getModList(serverId = 'farabad') {
   if (!cachedMods.length) loadModsList();
   if (store.get('presetPath')) return { source: 'preset-custom', mods: cachedMods };
-  const live = serverMods[serverId]?.mods?.length ? serverMods[serverId] : serverMods.farabad;
-  if (!live?.mods?.length) return { source: 'preset', mods: cachedMods };
+  const live = serverMods[serverId];
+  // Кэш старых версий мог содержать только начало списка сервера.
+  if (!live?.complete || !live.mods?.length) return { source: 'preset', mods: cachedMods };
   const names = new Map(cachedMods.map((m) => [m.workshopId, m.name]));
   return {
     source: 'server',
@@ -218,11 +216,12 @@ function getModList(serverId = 'farabad') {
 async function refreshServerMods(force = false) {
   await Promise.all(
     SERVERS.map(async (s) => {
-      if (!force && Date.now() - (serverMods[s.id]?.at || 0) < MODS_REFRESH_MS) return;
+      const cached = serverMods[s.id];
+      if (!force && cached?.complete && Date.now() - cached.at < MODS_REFRESH_MS) return;
       if (serversState[s.id] && serversState[s.id].status !== 'online') return;
       try {
         const mods = await queryServerMods(s.host, s.queryPort);
-        if (mods.length) serverMods[s.id] = { at: Date.now(), mods };
+        if (mods.length) serverMods[s.id] = { at: Date.now(), mods, complete: true };
       } catch {}
     })
   );
@@ -383,8 +382,8 @@ app.on('before-quit', () => {
   if (gameWatchTimer) clearInterval(gameWatchTimer);
   stopPairPolling();
   holonet?.stop();
-  launchControl?.cancel?.();
-  syncControl?.cancel?.();
+  launchControl?.abort();
+  syncControl?.abort();
 });
 
 app.on('window-all-closed', () => {
@@ -406,6 +405,7 @@ ipcMain.handle('save-settings', async (_, next = {}) => {
     store.set('extraLaunchArgs', String(next.extraLaunchArgs || '').trim());
   }
   if (next.activeProfileId !== undefined) {
+    store.set('profileMode', next.activeProfileId ? 'selected' : 'game');
     const prof = listPlayerProfiles().find((p) => p.id === next.activeProfileId);
     store.set('playerName', prof ? prof.displayName : '');
   }
@@ -427,22 +427,21 @@ ipcMain.handle('check-mods', async (_, { force = false } = {}) => {
 });
 
 // «Скачать» на вкладке «Моды»: подписка и загрузка через Steam API с прогрессом (без запуска игры)
-ipcMain.handle('sync-mods', async (_, ids = []) => {
+ipcMain.handle('sync-mods', async () => {
   if (syncControl || launchControl) return { ok: false, error: 'Загрузка уже идёт' };
-  await ensurePaths();
-  const config = getConfig();
-  const all = getModList().mods;
-  const want = ids.length ? all.filter((m) => ids.includes(m.workshopId)) : all;
-  syncControl = {};
+  syncControl = new AbortController();
+  const { signal } = syncControl;
   try {
+    await ensurePaths();
+    await refreshServerMods();
+    signal.throwIfAborted();
+    const config = getConfig();
+    const { mods } = getModList();
     const onProgress = (percent, message) => send('mods-sync-progress', { percent, message });
-    const res = await syncWorkshop(want, config, onProgress, syncControl, { from: 0, to: 100 });
-    if (!res.ok && res.code === 'no_helper') {
-      // нет steam_api64.dll в папке Arma: открыть страницы модов в Steam (там «Подписаться»)
-      await arma.openSteamSubscribe(want.map((m) => m.workshopId), config);
-      return { ok: false, error: 'Steam API недоступен — открыли страницы модов в Steam: нажмите «Подписаться».' };
-    }
+    const res = await syncWorkshop(mods, config, onProgress, signal, { from: 0, to: 100 });
     return { ok: res.ok, error: res.error, cancelled: res.cancelled };
+  } catch (e) {
+    return signal.aborted ? { ok: false, cancelled: true } : { ok: false, error: e.message || 'Ошибка загрузки модов' };
   } finally {
     syncControl = null;
     send('mods-sync-progress', null);
@@ -450,7 +449,7 @@ ipcMain.handle('sync-mods', async (_, ids = []) => {
 });
 
 ipcMain.handle('sync-mods-cancel', () => {
-  syncControl?.cancel?.();
+  syncControl?.abort();
   return { ok: true };
 });
 
@@ -459,28 +458,33 @@ ipcMain.handle('launch', async (event, { serverId = null, profileName = '' } = {
     return { ok: false, error: 'Arma 3 уже запущена — закройте игру или переключитесь на неё.' };
   }
   if (launchControl) return { ok: false, error: 'Запуск уже идёт' };
-  syncControl?.cancel?.();
-  await ensurePaths();
+  if (syncControl) return { ok: false, error: 'Идёт загрузка модов. Дождитесь её окончания.' };
+  launchControl = new AbortController();
+  const { signal } = launchControl;
   const server = serverId ? SERVERS.find((s) => s.id === serverId) : null;
   const progress = (percent, message) => event.sender.send('launch-progress', { percent, message });
   try {
+    await ensurePaths();
+    await refreshServerMods();
+    signal.throwIfAborted();
     // TeamSpeak до игры (настройка «Подключаться к TeamSpeak при запуске игры»): ждём, пока клиент зайдёт на сервер,
     // иначе TFAR в игре стартует без TS. Не дождались (нет плагина ClientQuery / таймаут) - игра всё равно запускается.
     if (store.get('tsAutoConnect') !== false) {
       progress(1, 'Проверка плагина TFAR...');
       await checkTfarPlugin();
+      signal.throwIfAborted();
       progress(2, 'Запуск TeamSpeak...');
       const ts = await ensureTeamSpeak(LINKS.teamspeak, { onStep: (m) => progress(3, m) });
       if (ts.ok) progress(5, 'TeamSpeak подключён');
     }
-    launchControl = {};
+    signal.throwIfAborted();
     const result = await prepareAndLaunch({
       mods: getModList(serverId || 'farabad').mods,
       config: getConfig(),
       server,
       profileName: String(profileName || '').slice(0, 64),
       onProgress: progress,
-      control: launchControl,
+      signal,
     });
     if (result.ok) {
       watchGameProcess(result.pid);
@@ -488,14 +492,14 @@ ipcMain.handle('launch', async (event, { serverId = null, profileName = '' } = {
     }
     return result;
   } catch (e) {
-    return { ok: false, error: e.message || 'Ошибка запуска' };
+    return signal.aborted ? { ok: false, cancelled: true } : { ok: false, error: e.message || 'Ошибка запуска' };
   } finally {
     launchControl = null;
   }
 });
 
 ipcMain.handle('launch-cancel', () => {
-  launchControl?.cancel?.();
+  launchControl?.abort();
   return { ok: true };
 });
 

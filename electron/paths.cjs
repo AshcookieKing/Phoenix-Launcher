@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { execFile } = require('child_process');
 
 const ARMA_APP_ID = '107410';
@@ -33,9 +32,12 @@ async function readRegistryPaths() {
 function parseLibraryFolders(steamPath) {
   const libs = [steamPath];
   const vdf = path.join(steamPath, 'steamapps', 'libraryfolders.vdf');
-  if (!fs.existsSync(vdf)) return libs;
-
-  const text = fs.readFileSync(vdf, 'utf8');
+  let text;
+  try {
+    text = fs.readFileSync(vdf, 'utf8');
+  } catch {
+    return libs;
+  }
   const re = /"path"\s+"([^"]+)"/gi;
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -75,10 +77,10 @@ function findArmaInstall(steamLibraries) {
 }
 
 function derivePathsFromArmaExe(armaExe) {
-  const normalized = path.normalize(String(armaExe || '').trim());
-  if (!normalized) {
+  if (!String(armaExe || '').trim()) {
     return { armaExe: '', steamPath: '', workshopDir: '', acfPath: '', armaDir: '' };
   }
+  const normalized = path.normalize(String(armaExe).trim());
   const lower = normalized.toLowerCase();
   const marker = `${path.sep}steamapps${path.sep}common${path.sep}`;
   const idx = lower.lastIndexOf(marker);
@@ -103,8 +105,8 @@ function derivePathsFromArmaExe(armaExe) {
 }
 
 function derivePathsFromSteamLibrary(libraryRoot) {
-  const root = path.normalize(String(libraryRoot || '').trim());
-  if (!root) return { steamPath: '', workshopDir: '', acfPath: '', armaExe: '' };
+  if (!String(libraryRoot || '').trim()) return { steamPath: '', workshopDir: '', acfPath: '', armaExe: '' };
+  const root = path.normalize(String(libraryRoot).trim());
   const steamapps = path.join(root, 'steamapps');
   const armaExe = path.join(steamapps, 'common', 'Arma 3', 'arma3_x64.exe');
   return {
@@ -125,7 +127,15 @@ function validateGamePaths({ armaExe, workshopDir } = {}) {
   } else if (!/^arma3_x64(_profiling)?\.exe$/i.test(path.basename(exe))) {
     errors.push('Нужен файл arma3_x64.exe (или profiling)');
   }
-  if (!workshop || !fs.existsSync(workshop)) {
+  // При первой подписке Steam сам создаёт workshop/content/107410 в библиотеке игры.
+  const expected = derivePathsFromArmaExe(exe).workshopDir;
+  const isDerived = workshop && expected && path.relative(expected, workshop) === '';
+  let validWorkshop = false;
+  try {
+    const stat = workshop ? fs.statSync(workshop, { throwIfNoEntry: false }) : undefined;
+    validWorkshop = stat ? stat.isDirectory() : Boolean(isDerived);
+  } catch {}
+  if (!validWorkshop) {
     errors.push('Укажите папку Workshop модов Arma 3');
   }
   return { valid: errors.length === 0, errors };
@@ -148,7 +158,6 @@ function collectSteamLibraries(reg = {}) {
 async function detectGamePaths() {
   const reg = await readRegistryPaths();
   const libraries = collectSteamLibraries(reg);
-  const workshop = findWorkshopDir(libraries);
   const arma = findArmaInstall(libraries);
 
   let armaExe = arma?.armaExe || '';
@@ -157,26 +166,14 @@ async function detectGamePaths() {
     if (fs.existsSync(fromReg)) armaExe = fromReg;
   }
 
-  let steamPath = workshop?.steamPath || '';
-  let workshopDir = workshop?.workshopDir || '';
-  let acfPath = workshop?.acfPath || '';
-
-  if (armaExe) {
-    const derived = derivePathsFromArmaExe(armaExe);
-    if (!steamPath && derived.steamPath) steamPath = derived.steamPath;
-    if (!workshopDir && derived.workshopDir) workshopDir = derived.workshopDir;
-    if (!acfPath && derived.acfPath) acfPath = derived.acfPath;
-  }
-
-  if (steamPath && !acfPath) {
-    acfPath = path.join(steamPath, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`);
-  }
+  const derived = derivePathsFromArmaExe(armaExe);
+  const workshop = derived.workshopDir ? derived : findWorkshopDir(libraries);
 
   return {
     armaExe,
-    steamPath,
-    workshopDir,
-    acfPath,
+    steamPath: workshop?.steamPath || '',
+    workshopDir: workshop?.workshopDir || '',
+    acfPath: workshop?.acfPath || '',
     armaDir: armaExe ? path.dirname(armaExe) : '',
     libraries,
   };
@@ -185,22 +182,31 @@ async function detectGamePaths() {
 async function autoResolvePaths(stored = {}) {
   const detected = await detectGamePaths();
   const storedExe = stored.armaExe && fs.existsSync(stored.armaExe) ? stored.armaExe : '';
+  const armaExe = storedExe || detected.armaExe;
+  const derived = derivePathsFromArmaExe(armaExe);
   const storedWorkshop = stored.workshopDir && fs.existsSync(stored.workshopDir) ? stored.workshopDir : '';
   const storedSteam = stored.steamPath && fs.existsSync(stored.steamPath) ? stored.steamPath : '';
+  const workshopDir = storedWorkshop || derived.workshopDir || detected.workshopDir;
+  const steamPath = storedSteam || derived.steamPath || detected.steamPath;
+  const acfPath = workshopManifestPath(workshopDir) ||
+    (steamPath ? path.join(steamPath, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`) : '');
 
   return {
-    steamPath: storedSteam || detected.steamPath || '',
-    workshopDir: storedWorkshop || detected.workshopDir || '',
-    acfPath:
-      (storedSteam && path.join(storedSteam, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`)) ||
-      detected.acfPath ||
-      '',
-    armaExe: storedExe || detected.armaExe || '',
-    armaProfilingExe: detected.armaExe ? path.join(path.dirname(detected.armaExe), 'arma3_x64_profiling.exe') : undefined,
-    armaDir: storedExe ? path.dirname(storedExe) : detected.armaDir,
+    steamPath, workshopDir, acfPath, armaExe,
+    armaProfilingExe: armaExe ? path.join(path.dirname(armaExe), 'arma3_x64_profiling.exe') : undefined,
+    armaDir: armaExe ? path.dirname(armaExe) : '',
     libraries: detected.libraries,
     suggestedSteamPath: detected.steamPath || '',
   };
+}
+
+function workshopManifestPath(contentDir) {
+  if (!contentDir || path.basename(contentDir) !== ARMA_APP_ID) return '';
+  const content = path.dirname(contentDir);
+  if (path.basename(content).toLowerCase() !== 'content') return '';
+  const workshop = path.dirname(content);
+  if (path.basename(workshop).toLowerCase() !== 'workshop') return '';
+  return path.join(workshop, `appworkshop_${ARMA_APP_ID}.acf`);
 }
 
 module.exports = {
@@ -213,4 +219,5 @@ module.exports = {
   derivePathsFromArmaExe,
   derivePathsFromSteamLibrary,
   validateGamePaths,
+  workshopManifestPath,
 };

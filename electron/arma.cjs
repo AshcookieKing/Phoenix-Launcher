@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const https = require('https');
-const { autoResolvePaths, ARMA_APP_ID, parseLibraryFolders } = require('./paths.cjs');
+const { autoResolvePaths, ARMA_APP_ID, parseLibraryFolders, workshopManifestPath } = require('./paths.cjs');
 
 const PERFORMANCE_PRESETS = {
   low: { cpuCount: 4, exThreads: 2, maxMem: 4096, maxVram: 1024, hugePages: false },
@@ -111,10 +111,10 @@ function removeSteamAppId(armaDir) {
   }
 }
 
-async function ensureSteamRunning(config) {
+async function ensureSteamRunning(config, signal) {
   try {
     const { ensureSteamClient } = require('./steam-workshop.cjs');
-    await ensureSteamClient(config);
+    await ensureSteamClient(config, signal);
   } catch {
     /* ignore */
   }
@@ -134,109 +134,110 @@ function syncWorkshopWithArma(config) {
   return result;
 }
 
-function getWorkshopLibraries(config) {
-  const libs = [];
-  const add = (root) => {
-    if (!root) return;
-    for (const lib of parseLibraryFolders(root)) {
-      if (!libs.includes(lib)) libs.push(lib);
-    }
+function workshopLocations(config) {
+  const locations = new Map();
+  const add = (contentDir, acfPath) => {
+    if (contentDir && !locations.has(contentDir)) locations.set(contentDir, acfPath);
   };
-  add(config.steamPath);
-  if (config.workshopDir) {
-    const marker = `${path.sep}steamapps${path.sep}workshop${path.sep}content${path.sep}`;
-    const idx = config.workshopDir.toLowerCase().lastIndexOf(marker.toLowerCase());
-    if (idx > 0) add(config.workshopDir.slice(0, idx));
+  add(config.workshopDir, workshopManifestPath(config.workshopDir) || config.acfPath);
+  const libraries = config.steamPath ? parseLibraryFolders(config.steamPath) : [];
+  for (const lib of [...libraries, ...(config.libraries || [])]) {
+    const contentDir = path.join(lib, 'steamapps', 'workshop', 'content', ARMA_APP_ID);
+    add(contentDir, workshopManifestPath(contentDir));
   }
-  return libs;
+  return locations;
 }
 
 function locateModFolder(workshopId, config) {
-  for (const lib of getWorkshopLibraries(config)) {
-    const folder = path.join(lib, 'steamapps', 'workshop', 'content', ARMA_APP_ID, workshopId);
-    if (fs.existsSync(folder)) {
-      return {
-        folder,
-        acfPath: path.join(lib, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`),
-      };
-    }
-  }
-  const fallback = path.join(config.workshopDir || '', workshopId);
-  if (config.workshopDir && fs.existsSync(fallback)) {
-    return {
-      folder: fallback,
-      acfPath: config.acfPath,
-    };
+  for (const [contentDir, acfPath] of workshopLocations(config)) {
+    const folder = path.join(contentDir, workshopId);
+    if (fs.existsSync(folder)) return { folder, acfPath };
   }
   return null;
 }
 
-function parseAllAcfTimes(config) {
-  const map = new Map();
-  for (const lib of getWorkshopLibraries(config)) {
-    const acfPath = path.join(lib, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`);
-    for (const [id, time] of parseAcfTimes(acfPath)) {
-      map.set(id, time);
+// В ACF только WorkshopItemsInstalled описывает установленные файлы.
+// WorkshopItemDetails может содержать целевой манифест ещё до окончания загрузки.
+function readWorkshopManifest(file) {
+  if (!file) return {};
+  try {
+    const text = fs.readFileSync(file, 'utf8');
+    const tokens = text.match(/"(?:\\.|[^"\\])*"|[{}]/g) || [];
+    let i = 0;
+    function section() {
+      const fields = Object.create(null);
+      while (i < tokens.length && tokens[i] !== '}') {
+        const key = tokens[i++].slice(1, -1);
+        const value = tokens[i++];
+        fields[key] = value === '{' ? section() : value.slice(1, -1);
+      }
+      i++;
+      return fields;
     }
+    return section().AppWorkshop || {};
+  } catch {
+    return {};
   }
-  if (config.acfPath) {
-    for (const [id, time] of parseAcfTimes(config.acfPath)) {
-      if (!map.has(id)) map.set(id, time);
-    }
-  }
-  return map;
 }
 
 function findModRoot(workshopFolder) {
-  if (!fs.existsSync(workshopFolder)) return null;
   const queue = [workshopFolder];
+  let hasFiles = false;
   for (let depth = 0; depth < 5 && queue.length; depth++) {
     const levelCount = queue.length;
     for (let i = 0; i < levelCount; i++) {
       const dir = queue.shift();
       try {
-        if (fs.existsSync(path.join(dir, 'addons'))) return dir;
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          if (entry.isDirectory()) queue.push(path.join(dir, entry.name));
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const child = path.join(dir, entry.name);
+          if (entry.name.toLowerCase() === 'addons' && (entry.isDirectory() || entry.isSymbolicLink()) &&
+              fs.readdirSync(child).length) return dir;
+          if (entry.isDirectory()) {
+            queue.push(child);
+          } else if (entry.isFile() || entry.isSymbolicLink()) {
+            hasFiles = true;
+          }
         }
       } catch {}
     }
   }
-  return workshopFolder;
+  // Расширения, композиции и старые форматы Workshop могут поставляться без addons.
+  return hasFiles ? workshopFolder : null;
 }
 
-// WorkshopItemDetails: manifest (стоит) и latest_manifest (последняя в Workshop) - разные = мод устарел
-function parseAcfOutdated(config) {
-  const set = new Set();
-  const files = new Set(getWorkshopLibraries(config).map((lib) => path.join(lib, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`)));
-  if (config.acfPath) files.add(config.acfPath);
-  for (const file of files) {
-    if (!fs.existsSync(file)) continue;
-    const text = fs.readFileSync(file, 'utf8');
-    const at = text.indexOf('"WorkshopItemDetails"');
-    if (at < 0) continue;
-    const re = /"(\d+)"\s*\{([^}]*)\}/g;
-    re.lastIndex = at;
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      const cur = m[2].match(/"manifest"\s+"(\d+)"/);
-      const latest = m[2].match(/"latest_manifest"\s+"(\d+)"/);
-      if (cur && latest && latest[1] !== '0' && cur[1] !== latest[1]) set.add(m[1]);
+// ACF и GetItemInstallInfo сообщают суммарный размер файлов. Читаем только
+// метаданные; дополнительные файлы игрока не делают установленный мод устаревшим.
+async function hasInstalledBytes(folder, expectedSize) {
+  const pending = [folder];
+  const visited = new Set();
+  let bytes = 0;
+  try {
+    while (pending.length) {
+      const dir = await fs.promises.realpath(pending.pop());
+      if (visited.has(dir)) continue;
+      visited.add(dir);
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      const files = [];
+      for (const entry of entries) {
+        const file = path.join(dir, entry.name);
+        if (entry.isDirectory()) pending.push(file);
+        else if (entry.isSymbolicLink()) {
+          const stat = await fs.promises.stat(file).catch(() => null);
+          if (stat?.isDirectory()) pending.push(file);
+          else if (stat?.isFile()) bytes += stat.size;
+        } else if (entry.isFile()) files.push(file);
+      }
+      for (let i = 0; i < files.length && bytes < expectedSize; i += 64) {
+        const stats = await Promise.all(files.slice(i, i + 64).map((file) => fs.promises.stat(file)));
+        for (const stat of stats) bytes += stat.size;
+      }
+      if (bytes >= expectedSize) return true;
     }
+  } catch {
+    // Steam мог заменить файл прямо во время проверки.
   }
-  return set;
-}
-
-function parseAcfTimes(acfPath) {
-  const map = new Map();
-  if (!fs.existsSync(acfPath)) return map;
-  const text = fs.readFileSync(acfPath, 'utf8');
-  const re = /"(\d+)"\s*\{[^}]*"timeupdated"\s+"(\d+)"/gis;
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    map.set(m[1], parseInt(m[2], 10));
-  }
-  return map;
+  return false;
 }
 
 function fetchSteamFileDetails(ids) {
@@ -251,6 +252,7 @@ function fetchSteamFileDetails(ids) {
         hostname: 'api.steampowered.com',
         path: '/ISteamRemoteStorage/GetPublishedFileDetails/v1/',
         method: 'POST',
+        signal: AbortSignal.timeout(8000),
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(body.toString()),
@@ -258,6 +260,8 @@ function fetchSteamFileDetails(ids) {
       },
       (res) => {
         let data = '';
+        res.on('error', () => resolve({}));
+        res.on('aborted', () => resolve({}));
         res.on('data', (c) => (data += c));
         res.on('end', () => {
           try {
@@ -282,43 +286,61 @@ function fetchSteamFileDetails(ids) {
   });
 }
 
-let modCheckCache = { key: '', at: 0, results: null };
+let remoteCache = { key: '', at: 0, details: {} };
 
-async function checkMods(mods, config, { force = false } = {}) {
-  syncWorkshopWithArma(config);
-  const workshopDir = config.workshopDir;
-  if (!fs.existsSync(workshopDir)) {
-    return mods.map((m) => ({ ...m, status: 'missing', path: null }));
+async function checkMods(mods, config, { force = false, localOnly = false, items } = {}) {
+  const locations = workshopLocations(config);
+  const manifests = new Map();
+  function manifestFor(file) {
+    if (!manifests.has(file)) manifests.set(file, readWorkshopManifest(file));
+    return manifests.get(file);
+  }
+  let remote = {};
+  if (!localOnly && mods.length) {
+    const ids = mods.map((m) => m.workshopId);
+    const key = ids.join(',');
+    if (force || remoteCache.key !== key || Date.now() - remoteCache.at >= 300000) {
+      remote = await fetchSteamFileDetails(ids);
+      remoteCache = { key, at: Date.now(), details: remote };
+    } else remote = remoteCache.details;
   }
 
-  const acfMtime = fs.existsSync(config.acfPath) ? fs.statSync(config.acfPath).mtimeMs : 0;
-  const cacheKey = `${workshopDir}:${acfMtime}:${mods.length}`;
-  if (!force && modCheckCache.key === cacheKey && modCheckCache.results && Date.now() - modCheckCache.at < 300000) {
-    return modCheckCache.results;
-  }
-
-  const acfTimes = parseAllAcfTimes(config);
-  const acfOutdated = parseAcfOutdated(config);
-  const remote = await fetchSteamFileDetails(mods.map((m) => m.workshopId));
-
-  const results = mods.map((mod) => {
-    const located = locateModFolder(mod.workshopId, config);
-    const folder = located?.folder || path.join(workshopDir, mod.workshopId);
-    const exists = Boolean(located && fs.existsSync(folder));
-    const modPath = exists ? findModRoot(folder) : null;
-    const localTime = acfTimes.get(mod.workshopId) || 0;
-    const remoteTime = remote[mod.workshopId]?.timeUpdated || 0;
-    let status = 'missing';
-    if (exists && modPath) {
-      status = remoteTime > localTime + 120 || acfOutdated.has(mod.workshopId) ? 'outdated' : 'ok';
-    } else if (exists) {
-      status = 'missing';
+  const results = [];
+  for (const mod of mods) {
+    const id = String(mod.workshopId);
+    const info = items?.get(id);
+    const title = remote[id]?.title;
+    const remoteTime = remote[id]?.timeUpdated || 0;
+    let result = { ...mod, name: mod.name || title || id, title, remoteTime, localTime: 0,
+      folder: config.workshopDir ? path.join(config.workshopDir, id) : '', path: null, status: 'missing' };
+    // Ответ работающего Steam относится к одной конкретной установке.
+    const candidates = info?.folder
+      ? [[path.dirname(info.folder), workshopManifestPath(path.dirname(info.folder)) || locations.get(path.dirname(info.folder))]]
+      : locations;
+    for (const [contentDir, acfPath] of candidates) {
+      const folder = info?.folder || path.join(contentDir, id);
+      const manifest = manifestFor(acfPath);
+      const installed = manifest.WorkshopItemsInstalled?.[id];
+      const detail = manifest.WorkshopItemDetails?.[id] || {};
+      if (!info?.ready && !installed) continue;
+      // После DONE Steam может ещё не записать новый ACF на диск.
+      const size = Number(info?.size) || Number(installed?.size) || 1;
+      const modPath = findModRoot(folder);
+      if (!modPath || !(await hasInstalledBytes(folder, Math.max(1, size)))) continue;
+      const localTime = Number(info?.stamp) || Number(installed?.timeupdated) || 0;
+      const target = detail.latest_manifest && detail.latest_manifest !== '0' ? detail.latest_manifest : detail.manifest;
+      const targetTime = Number(detail.latest_timeupdated) || Number(detail.timeupdated) || 0;
+      const staleTime = targetTime > localTime || remoteTime > localTime + 120;
+      const staleManifest = target && target !== '0' && target !== installed?.manifest;
+      const downloading = Number(detail.BytesDownloaded || 0) < Number(detail.BytesToDownload || 0);
+      const outdated = info?.ready
+        ? Number(info.stamp) > 0 && staleTime
+        : info?.ready === false || staleTime || staleManifest || downloading;
+      result = { ...result, folder, path: modPath, localTime, status: outdated ? 'outdated' : 'ok' };
+      if (!outdated) break;
     }
-    const title = remote[mod.workshopId]?.title;
-    return { ...mod, name: mod.name || title || mod.workshopId, title, status, path: modPath, localTime, remoteTime, folder };
-  });
-
-  modCheckCache = { key: cacheKey, at: Date.now(), results };
+    results.push(result);
+  }
   return results;
 }
 
@@ -373,14 +395,15 @@ function buildLaunchArgs(config, modParam) {
   return args.filter((a) => !isBannedLaunchArg(a, { allowNoSplash }));
 }
 
-async function launchGame(config, modParam) {
+async function launchGame(config, modParam, signal) {
   const armaExe = resolveArmaExe(config);
   if (!fs.existsSync(armaExe)) {
     throw new Error('Arma 3 не найдена. Установите игру через Steam.');
   }
   const armaDir = path.dirname(armaExe);
   removeSteamAppId(armaDir);
-  await ensureSteamRunning(config);
+  await ensureSteamRunning(config, signal);
+  signal?.throwIfAborted();
 
   const args = buildLaunchArgs(config, modParam);
 
@@ -418,12 +441,6 @@ async function launchGame(config, modParam) {
   });
 }
 
-async function openSteamSubscribe(workshopIds, config = {}) {
-  const { syncWorkshopItems } = require('./steam-workshop.cjs');
-  const ids = Array.isArray(workshopIds) ? workshopIds : [workshopIds];
-  return syncWorkshopItems(ids, config);
-}
-
 module.exports = {
   autoResolvePaths,
   syncWorkshopWithArma,
@@ -432,7 +449,6 @@ module.exports = {
   buildModParam,
   buildLaunchArgs,
   launchGame,
-  openSteamSubscribe,
   findModRoot,
   locateModFolder,
   ARMA_APP_ID,

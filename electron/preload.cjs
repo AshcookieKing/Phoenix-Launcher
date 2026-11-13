@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('phoenix', {
   refreshServers: () => ipcRenderer.invoke('refresh-servers'),
   getMods: () => ipcRenderer.invoke('get-mods'),
   checkMods: (opts) => ipcRenderer.invoke('check-mods', opts),
-  syncMods: (ids) => ipcRenderer.invoke('sync-mods', ids),
+  syncMods: () => ipcRenderer.invoke('sync-mods'),
   launch: (opts) => ipcRenderer.invoke('launch', opts),
   launchCancel: () => ipcRenderer.invoke('launch-cancel'),
   syncModsCancel: () => ipcRenderer.invoke('sync-mods-cancel'),
