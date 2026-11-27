@@ -28,11 +28,26 @@ function runSelfTest(app, win, outDir) {
           report.mods = await js(`[...document.querySelectorAll('.mod-row')].map(r => r.innerText.replace(/\\s+/g,' '))`);
         }
       }
+      // чекер сети: дождаться итога проверки при запуске и снять панель в Настройках
+      if (!(await js('window.phoenix.netCheckGet()'))) await js('window.phoenix.netCheckRun({})');
+      for (let i = 0; i < 95; i++) {
+        const st = await js(`window.phoenix.netCheckGet().then(s => s && s.state)`);
+        if (st === 'done' || st === 'error') break;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      await js(`[...document.querySelectorAll('.tab')].find(b => b.textContent.includes('Настройки')).click()`);
+      await new Promise((r) => setTimeout(r, 1500));
+      await js(`document.querySelector('.netcheck')?.scrollIntoView()`);
+      await new Promise((r) => setTimeout(r, 500));
+      report.netcheck = await js(`document.querySelector('.netcheck')?.innerText.replace(/\\s+/g,' ')`);
+      await shot('network');
+      report.checkerState = await js('window.phoenix.netCheckGet().then(s => s?.state)');
+      if (report.checkerState !== 'done') throw new Error('Чекер не вернул отчёт');
     } catch (e) {
       report.error = String(e?.stack || e);
     }
     fs.writeFileSync(path.join(outDir, 'report.json'), JSON.stringify(report, null, 2), 'utf8');
-    app.exit(0);
+    app.exit(report.error ? 1 : 0);
   });
 }
 

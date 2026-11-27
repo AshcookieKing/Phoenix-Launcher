@@ -5,6 +5,32 @@ const { ROLE_API, BOT_API, MENU_LOGIN_URL } = require('./phx-config.cjs');
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+let reserveEnabled = () => false;
+let reserveSession;
+function configureReserve(isEnabled) {
+  reserveEnabled = isEnabled;
+}
+
+async function readPhoenix(url, options) {
+  const direct = await request(url, options);
+  if (direct.status || !reserveEnabled()) return direct;
+  const target = new URL(url);
+  const endpoint = target.origin + target.pathname;
+  if (![ROLE_API + '/menu/roles', BOT_API + '/api/launcher/online'].includes(endpoint)) return direct;
+  try {
+    reserveSession ||= require('electron').session.fromPartition('phx-reserve');
+    const route = await reserveSession.resolveProxy(url);
+    if (!route || route.trim() === 'DIRECT') return direct;
+    const response = await reserveSession.fetch(url, {
+      method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store',
+      signal: AbortSignal.timeout(6000),
+    });
+    return { status: response.status, data: await response.json().catch(() => null) };
+  } catch {
+    return direct;
+  }
+}
+
 function request(url, { method = 'GET', body = null, timeout = 8000 } = {}) {
   return new Promise((resolve) => {
     const payload = body ? JSON.stringify(body) : null;
@@ -44,7 +70,7 @@ async function getMenuRoles(steamId) {
   if (!/^7656\d{13}$/.test(String(steamId || ''))) {
     return { ok: false, error: 'Steam не найден' };
   }
-  const res = await request(`${ROLE_API}/menu/roles?steam=${steamId}`);
+  const res = await readPhoenix(`${ROLE_API}/menu/roles?steam=${steamId}`);
   if (res.status !== 200 || !res.data) {
     return { ok: false, error: res.status === 429 ? 'Слишком часто, подождите' : 'Сервер ролей недоступен' };
   }
@@ -81,8 +107,8 @@ async function unlinkMenu(steamId, token) {
 }
 
 async function botOnline() {
-  const res = await request(`${BOT_API}/api/launcher/online`, { timeout: 5000 });
+  const res = await readPhoenix(`${BOT_API}/api/launcher/online`, { timeout: 5000 });
   return res.status === 200;
 }
 
-module.exports = { getMenuRoles, startMenuPair, unlinkMenu, botOnline };
+module.exports = { configureReserve, getMenuRoles, startMenuPair, unlinkMenu, botOnline };

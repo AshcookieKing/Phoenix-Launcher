@@ -1,14 +1,16 @@
 // Автообновление по релизам GitHub (AshcookieKing/Phoenix-Launcher).
-// Сборка portable: electron-updater её не обновляет, поэтому свой путь —
-// latest release → скачать PhoenixLauncher.exe рядом с текущим → сразу же: текущий переименовать в .old.exe, новый
-// поставить на его место (со следующего запуска - новая версия; кнопка «Перезапустить» - сейчас). Без PowerShell.
+// С 1.4.0 лаунчер ставится установщиком NSIS (PhoenixLauncherSetup.exe) в %LOCALAPPDATA%\Programs\PhoenixLauncher
+// (или Program Files, если при установке выбрать «для всех пользователей»). В %TEMP% ничего не распаковывается:
+// обновление скачивается в папку данных лаунчера (%APPDATA%\PhoenixLauncher\updates) и ставится тихо (/S) -
+// по кнопке «Перезапустить» или само при закрытии лаунчера. Старая portable-сборка (PhoenixLauncher.exe) этим же
+// путём переходит на установленную версию. Без PowerShell/cmd (их антивирусы считают признаком вредоноса).
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const { spawn } = require('child_process');
+const { spawnDetached } = require('./safe-spawn.cjs');
 
 const REPO = 'AshcookieKing/Phoenix-Launcher';
-const ASSET = 'PhoenixLauncher.exe';
+const ASSET = 'PhoenixLauncherSetup.exe';
 const UA = 'PhoenixLauncher-updater';
 
 function parseVersion(v) {
@@ -106,58 +108,53 @@ function get(url, { json = false, onData = null, file = null, hops = 0 } = {}) {
   });
 }
 
-function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
-  // Путь к самому PhoenixLauncher.exe (portable распаковывается во временную папку, а это — исходный файл)
-  const exePath = process.env.PORTABLE_EXECUTABLE_FILE || '';
-  const portable = Boolean(exePath) && fs.existsSync(exePath);
-  const pending = portable ? path.join(path.dirname(exePath), 'PhoenixLauncher.update.exe') : '';
-  // прежняя версия после обновления (запущенный exe переименовывается - удалить его можно только после выхода)
-  const old = portable ? path.join(path.dirname(exePath), 'PhoenixLauncher.old.exe') : '';
-  if (old && fs.existsSync(old)) {
-    try {
-      fs.unlinkSync(old);
-    } catch {
-      /* ещё занят закрывающимся экземпляром - удалится при следующем запуске */
+function createUpdater({ appVersion, onStatus, isAutoEnabled, updatesDir, packaged }) {
+  // старая portable-сборка: PORTABLE_EXECUTABLE_FILE - путь к самому PhoenixLauncher.exe
+  const portableExe = process.env.PORTABLE_EXECUTABLE_FILE || '';
+  const portable = Boolean(portableExe) && fs.existsSync(portableExe);
+  const setupFile = path.join(updatesDir, ASSET);
+  // хвосты прежней схемы обновления portable (рядом с exe)
+  if (portable) {
+    for (const name of ['PhoenixLauncher.old.exe', 'PhoenixLauncher.update.exe', 'PhoenixLauncher.update.exe.part']) {
+      try {
+        fs.rmSync(path.join(path.dirname(portableExe), name), { force: true });
+      } catch {}
     }
   }
-  let status = { state: portable ? 'idle' : 'dev', current: appVersion };
+  // установщик прошлого обновления уже отработал - убрать
+  try {
+    fs.rmSync(setupFile, { force: true });
+    fs.rmSync(`${setupFile}.part`, { force: true });
+  } catch {}
+
+  let status = { state: packaged ? 'idle' : 'dev', current: appVersion, portable };
   let busy = false;
+  let installing = false;
 
   const set = (patch) => {
-    status = { ...status, ...patch, current: appVersion };
+    status = { ...status, ...patch, current: appVersion, portable };
     onStatus?.(status);
   };
 
-  // остаток прошлого обновления (скачан, но не установлен или уже установлен)
-  if (pending && fs.existsSync(pending)) {
-    try {
-      fs.unlinkSync(pending);
-    } catch {
-      /* занят — удалится в следующий раз */
-    }
-  }
-
   async function check({ manual = false } = {}) {
-    if (busy || status.state === 'ready' || status.state === 'installed') return status;
+    if (!packaged || busy || status.state === 'ready') return status;
     busy = true;
     try {
       set({ state: 'checking', error: null });
       const rel = await latestRelease();
       const asset = rel.asset;
-      if (!asset || !isNewer(rel.tag_name, appVersion)) {
+      const info = { latest: rel.tag_name, notes: rel.body || '', url: rel.html_url, checkedAt: Date.now() };
+      // portable переходит на установленную версию даже без новой версии
+      const migrate = portable && Boolean(asset);
+      if (!asset || (!migrate && !isNewer(rel.tag_name, appVersion))) {
         set({ state: 'none', latest: rel.tag_name, checkedAt: Date.now() });
         return status;
       }
-      const info = { latest: rel.tag_name, notes: rel.body || '', url: rel.html_url, checkedAt: Date.now() };
-      if (!portable) {
-        set({ state: 'available', ...info });
-        return status;
-      }
       if (!manual && !isAutoEnabled()) {
-        set({ state: 'available', ...info });
+        set({ state: 'available', migrate, ...info });
         return status;
       }
-      await download(asset, info);
+      await download(asset, { migrate, ...info });
       return status;
     } catch (e) {
       set({ state: 'error', error: e.message || String(e) });
@@ -168,7 +165,8 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
   }
 
   async function download(asset, info) {
-    const tmp = `${pending}.part`;
+    fs.mkdirSync(updatesDir, { recursive: true });
+    const tmp = `${setupFile}.part`;
     set({ state: 'downloading', percent: 0, ...info });
     let last = 0;
     const res = await get(asset.browser_download_url, {
@@ -186,52 +184,43 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled }) {
       fs.rmSync(tmp, { force: true });
       throw new Error('файл обновления скачался не полностью');
     }
-    fs.renameSync(tmp, pending);
-    // ставим сразу: со следующего запуска лаунчер уже новой версии, перезапуск сейчас - по кнопке
-    const staged = stage();
-    set(staged.ok ? { state: 'installed', percent: 100, ...info } : { state: 'ready', percent: 100, error: staged.error, ...info });
+    fs.renameSync(tmp, setupFile);
+    set({ state: 'ready', percent: 100, ...info });
   }
 
-  // Установка без скрытого PowerShell (его антивирусы считают признаком вредоноса): запущенный PhoenixLauncher.exe
-  // Windows разрешает переименовать - он становится PhoenixLauncher.old.exe (удаляется при следующем запуске),
-  // скачанный ставится на его место. Работающий экземпляр это не трогает (он уже распакован во временную папку).
-  function stage() {
-    if (!fs.existsSync(pending)) return { ok: false, error: 'Обновление ещё не скачано' };
-    try {
-      fs.rmSync(old, { force: true });
-    } catch {
-      /* старый ещё занят - переименование ниже его заменит или сообщит об ошибке */
-    }
-    try {
-      fs.renameSync(exePath, old);
-    } catch (e) {
-      return { ok: false, error: `Не удалось заменить файл лаунчера (${e.code || e.message}). Скачайте новую версию с GitHub.` };
-    }
-    try {
-      fs.renameSync(pending, exePath);
-    } catch (e) {
+  // Тихая установка поверх прежней (NSIS сам находит папку прошлой установки; для Program Files спросит UAC).
+  // run=true - запустить лаунчер после установки (--force-run).
+  async function runSetup(run) {
+    if (installing) return { ok: true };
+    if (!fs.existsSync(setupFile)) return { ok: false, error: 'Обновление ещё не скачано' };
+    installing = true;
+    const args = ['/S', '--updated'];
+    if (run) args.push('--force-run');
+    const res = await spawnDetached(setupFile, args, { cwd: updatesDir, windowsHide: false });
+    if (!res.ok) {
+      installing = false;
+      // установщик заблокирован (антивирус/SmartScreen) - страница релиза, поставить вручную
       try {
-        fs.renameSync(old, exePath);
+        require('electron').shell.openExternal(status.url || `https://github.com/${REPO}/releases/latest`);
       } catch {}
-      return { ok: false, error: `Не удалось установить обновление (${e.code || e.message}). Скачайте новую версию с GitHub.` };
+      return { ok: false, error: res.message };
     }
     return { ok: true };
   }
 
-  // Перезапуск на новой версии: новый exe с --after-update ждёт, пока этот экземпляр закроется.
-  function install(app) {
-    if (status.state === 'ready') {
-      const staged = stage();
-      if (!staged.ok) return staged;
-      set({ state: 'installed' });
-    }
-    if (status.state !== 'installed') return { ok: false, error: 'Обновление ещё не скачано' };
-    spawn(exePath, ['--after-update'], { cwd: path.dirname(exePath), detached: true, stdio: 'ignore' }).unref();
-    setTimeout(() => app.exit(0), 300);
-    return { ok: true };
+  async function install(app) {
+    if (status.state !== 'ready') return { ok: false, error: 'Обновление ещё не скачано' };
+    const res = await runSetup(true);
+    if (res.ok) setTimeout(() => app.exit(0), 300);
+    return res;
   }
 
-  return { check, install, getStatus: () => status, portable };
+  // Закрытие лаунчера со скачанным обновлением - поставить его (без запуска)
+  function installOnQuit() {
+    if (status.state === 'ready' && !installing && isAutoEnabled()) runSetup(false).catch(() => {});
+  }
+
+  return { check, install, installOnQuit, getStatus: () => status, portable };
 }
 
-module.exports = { createUpdater, isNewer };
+module.exports = { createUpdater, isNewer, ASSET };

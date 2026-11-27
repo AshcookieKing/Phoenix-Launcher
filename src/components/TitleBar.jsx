@@ -1,4 +1,5 @@
-import { IconClose, IconDiscord, IconDownload, IconHeadset, IconHolo, IconHome, IconMinimize, IconMods, IconSettings, IconSystems, IconUser } from './Icons';
+import { netSummary } from './NetCheckPanel';
+import { IconAlert, IconSignal, IconClose, IconDiscord, IconDownload, IconHeadset, IconHolo, IconHome, IconMinimize, IconMods, IconSettings, IconSystems, IconUser } from './Icons';
 
 const TABS = [
   { id: 'home', label: 'Главная', Icon: IconHome },
@@ -9,7 +10,9 @@ const TABS = [
   { id: 'settings', label: 'Настройки', Icon: IconSettings },
 ];
 
-export default function TitleBar({ view, onView, links, api, update }) {
+export default function TitleBar({ view, onView, links, api, update, net }) {
+  const netBusy = net?.state === 'checking' || net?.state === 'fixing';
+  const netBad = net?.state === 'done' && net.results?.some((r) => r.status === 'fail');
   return (
     <header className="titlebar">
       <div className="brand">
@@ -34,6 +37,12 @@ export default function TitleBar({ view, onView, links, api, update }) {
       </nav>
 
       <div className="title-actions">
+        {(netBusy || netBad) && (
+          <button type="button" className={`chip-btn update-chip ${netBad ? 'is-bad' : ''}`} onClick={() => onView('settings')} title={netSummary(net)}>
+            {netBad ? <IconAlert size={16} /> : <IconSignal size={16} />}
+            <span>{netBusy ? (net.state === 'fixing' ? 'Сеть: исправление…' : 'Сеть: проверка…') : 'Сеть: есть проблемы'}</span>
+          </button>
+        )}
         {update?.state === 'downloading' && (
           <span className="chip-btn update-chip" title="Скачивается новая версия лаунчера">
             <IconDownload size={16} />
@@ -45,14 +54,10 @@ export default function TitleBar({ view, onView, links, api, update }) {
             type="button"
             className="chip-btn update-chip is-ready"
             onClick={() => api.installUpdate()}
-            title={
-              update.state === 'installed'
-                ? `Версия ${update.latest} уже установлена и включится при следующем запуске. Нажмите, чтобы перезапустить сейчас`
-                : `Перезапустить лаунчер на версии ${update.latest}`
-            }
+            title={`Установить версию ${update.latest} и перезапустить лаунчер (иначе установится при закрытии)`}
           >
             <IconDownload size={16} />
-            <span>{update.state === 'installed' ? `Перезапустить: ${update.latest}` : `Обновить до ${update.latest}`}</span>
+            <span>{`Обновить до ${update.latest}`}</span>
           </button>
         )}
         <button type="button" className="chip-btn chip-icon" onClick={() => api.openUrl(links.discord)} title="Discord Phoenix" aria-label="Discord Phoenix">

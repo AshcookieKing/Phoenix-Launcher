@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
+const { spawnDetached } = require('./safe-spawn.cjs');
 const { setTimeout: sleep } = require('node:timers/promises');
 const { readRegistryPaths } = require('./paths.cjs');
 
@@ -40,17 +41,14 @@ async function ensureSteamClient(config, signal) {
   const steamExe = await resolveSteamExe(config);
   if (!steamExe) return false;
   signal?.throwIfAborted();
-  const started = await new Promise((resolve) => {
-    const child = spawn(steamExe, ['-silent'], { detached: true, stdio: 'ignore', windowsHide: true });
-    child.once('error', () => resolve(false));
-    child.once('spawn', () => { child.unref(); resolve(true); });
-  });
-  if (!started) return false;
+  const started = await spawnDetached(steamExe, ['-silent'], { windowsHide: true });
+  if (!started.ok) return false;
   await sleep(5000, undefined, { signal });
   return true;
 }
 
 module.exports = {
+  isSteamRunning,
   resolveSteamExe,
   ensureSteamClient,
 };

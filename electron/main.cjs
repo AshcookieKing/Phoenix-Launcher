@@ -15,6 +15,7 @@ const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
 const { getSteamTicket, releaseSteamTicket } = require('./steam-ticket.cjs');
 const { createUpdater } = require('./updater.cjs');
+const { createNetCheck } = require('./netcheck.cjs');
 const { SERVERS, LINKS } = require('./phx-config.cjs');
 const { connectTeamSpeak, ensureTeamSpeak, ensureTfarPlugin, ts3Running } = require('./teamspeak.cjs');
 
@@ -29,6 +30,7 @@ const STORE_KEYS = new Set([
   'armaExe', 'steamPath', 'workshopDir', 'pathsConfigured', 'presetPath',
   'autoUpdate', 'screenMode', 'optimizedLaunch', 'profilingLaunch', 'keepLogs', 'tsAutoConnect', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
   'activeProfileId', 'profileMode', 'playerName', 'selectedServer', 'soundsEnabled', 'minimizeOnLaunch', 'animationsEnabled',
+  'netCheckOnStart', 'netAutoFix', 'reserveProxy',
 ]);
 
 const store = new Store({
@@ -57,6 +59,10 @@ const store = new Store({
     soundsEnabled: true,
     minimizeOnLaunch: true,
     animationsEnabled: true,
+    // чекер сети Phoenix при запуске лаунчера и безопасные исправления (сброс DNS, hosts, брандмауэр, zapret)
+    reserveProxy: false,
+    netCheckOnStart: true,
+    netAutoFix: true,
   },
 });
 // 1.2.4: TeamSpeak перед игрой включён по умолчанию, но electron-store уже записал старое значение по умолчанию (false)
@@ -79,6 +85,7 @@ let appQuitting = false;
 let launchControl = null;
 let syncControl = null;
 let holonet = null;
+let netcheck = null;
 // моды, которые требует сервер (A2S_RULES): { [serverId]: { at, mods: [{ workshopId, name }] } }
 const serverMods = { ...(store.get('serverMods') || {}) };
 const MODS_REFRESH_MS = 5 * 60000;
@@ -334,6 +341,25 @@ function singleInstanceLock() {
   }
   return false;
 }
+// Старая portable-сборка, а лаунчер уже установлен установщиком - открыть установленный (он не распаковывается в %TEMP%)
+function installedLauncher() {
+  if (!process.env.PORTABLE_EXECUTABLE_FILE || process.env.PHX_SELFTEST) return '';
+  const dirs = [
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'PhoenixLauncher'),
+    path.join(process.env.ProgramFiles || '', 'PhoenixLauncher'),
+  ];
+  return dirs.map((d) => path.join(d, 'PhoenixLauncher.exe')).find((p) => fs.existsSync(p)) || '';
+}
+const installedExe = installedLauncher();
+if (installedExe) {
+  const { trySpawn } = require('./safe-spawn.cjs');
+  const started = trySpawn(installedExe, [], { cwd: path.dirname(installedExe), detached: true, stdio: 'ignore' });
+  if (started.child) {
+    started.child.unref();
+    app.exit(0);
+  }
+}
+
 if (!process.env.PHX_SELFTEST && !singleInstanceLock()) {
   app.quit();
 } else {
@@ -352,16 +378,24 @@ app.whenReady().then(async () => {
     console.error(e);
   }
   await ensurePaths();
+  require('./phx-api.cjs').configureReserve(() => store.get('reserveProxy') === true);
   holonet = createHoloNet(store, (feed) => send('holonet-update', feed));
+  netcheck = createNetCheck({ dataDir: path.join(app.getPath('userData'), 'netcheck'), onUpdate: (s) => send('netcheck-update', s) });
   createWindow();
   mainWindow.webContents.once('did-finish-load', () => {
     startServerPolling();
     holonet.start();
+    if (store.get('netCheckOnStart') !== false) {
+      // самотест - только проверка (без исправлений и UAC)
+      netcheck.startup(!process.env.PHX_SELFTEST && store.get('netAutoFix') !== false).catch(() => {});
+    }
   });
   updater = createUpdater({
     appVersion: APP_VERSION,
     onStatus: (s) => mainWindow?.webContents.send('update-status', s),
     isAutoEnabled: () => store.get('autoUpdate') !== false,
+    updatesDir: path.join(app.getPath('userData'), 'updates'),
+    packaged: app.isPackaged,
   });
   if (!process.env.PHX_SELFTEST) {
     setTimeout(() => updater.check(), 5000);
@@ -371,13 +405,17 @@ app.whenReady().then(async () => {
 
 ipcMain.handle('get-update-status', () => updater?.getStatus() ?? { state: 'idle', current: APP_VERSION });
 ipcMain.handle('check-update', () => updater?.check({ manual: true }));
-ipcMain.handle('install-update', () => {
+ipcMain.handle('install-update', async () => {
+  if (!updater) return { ok: false, error: 'Обновление недоступно' };
   appQuitting = true;
-  return updater?.install(app) ?? { ok: false, error: 'Обновление недоступно' };
+  const res = await updater.install(app);
+  if (!res.ok) appQuitting = false;
+  return res;
 });
 
 app.on('before-quit', () => {
   appQuitting = true;
+  updater?.installOnQuit();
   if (serverPollTimer) clearInterval(serverPollTimer);
   if (gameWatchTimer) clearInterval(gameWatchTimer);
   stopPairPolling();
@@ -478,11 +516,13 @@ ipcMain.handle('launch', async (event, { serverId = null, profileName = '' } = {
       if (ts.ok) progress(5, 'TeamSpeak подключён');
     }
     signal.throwIfAborted();
+    // помощник Steam-билета (вход через Discord) держит сессию Steam как Arma 3 - закрыть до запуска игры
+    releaseSteamTicket();
     const result = await prepareAndLaunch({
       mods: getModList(serverId || 'farabad').mods,
       config: getConfig(),
       server,
-      profileName: String(profileName || '').slice(0, 64),
+      profileName: profileName ? listPlayerProfiles().find(p => p.displayName === profileName)?.displayName || '' : '',
       onProgress: progress,
       signal,
     });
@@ -524,6 +564,13 @@ ipcMain.handle('get-holonet', async (_, { force = false } = {}) => {
 });
 
 ipcMain.handle('get-account', (_, { force = false } = {}) => getAccount(force));
+
+ipcMain.handle('netcheck-get', () => netcheck?.get() || null);
+ipcMain.handle('netcheck-run', (_, { fix = null } = {}) => {
+  const ids = fix === 'auto' || fix === null || /^[a-z0-9_,]{1,200}$/.test(String(fix)) ? fix : null;
+  return netcheck?.run({ fix: ids }) ?? { state: 'error', error: 'Чекер недоступен' };
+});
+ipcMain.handle('netcheck-open', () => netcheck?.openWindow() ?? { ok: false });
 
 // Привязка Discord к меню Phoenix: тот же путь, что у кнопки «Войти через Discord» в игре
 ipcMain.handle('menu-pair-start', async () => {

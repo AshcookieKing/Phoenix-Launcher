@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { IconFolder, IconRefresh } from './Icons';
+import NetCheckPanel from './NetCheckPanel';
 
 const SCREEN_MODES = [
   { id: 'borderless', label: 'Без рамки' },
@@ -50,17 +51,19 @@ export function updateText(u) {
     case 'none':
       return 'Установлена последняя версия';
     case 'available':
-      return `Доступна версия ${u.latest}`;
+      return u.migrate ? 'Доступен установщик лаунчера — переход с portable-версии' : `Доступна версия ${u.latest}`;
     case 'downloading':
       return `Скачивание ${u.latest}: ${u.percent || 0}%`;
     case 'ready':
-      return `Версия ${u.latest} скачана — перезапустите лаунчер`;
+      return u.migrate
+        ? 'Установщик скачан — лаунчер установится при закрытии (больше не распаковывается во временную папку)'
+        : `Версия ${u.latest} скачана — установится при закрытии лаунчера`;
     case 'installed':
       return `Версия ${u.latest} установлена — включится при следующем запуске`;
     case 'error':
       return `Не удалось проверить обновления: ${u.error}`;
     case 'dev':
-      return 'Автообновление работает только в собранном PhoenixLauncher.exe';
+      return 'Автообновление работает только в установленном лаунчере';
     default:
       return '';
   }
@@ -226,13 +229,13 @@ export default function SettingsView({ api, settings, onSave, onApplySettings, u
             checked={settings.autoUpdate !== false}
             onChange={(v) => set({ autoUpdate: v })}
             label="Автообновление"
-            hint="Новые версии из релизов GitHub скачиваются и ставятся сами — включаются при следующем запуске лаунчера"
+            hint="Новые версии из релизов GitHub скачиваются сами и ставятся при закрытии лаунчера"
           />
           <div className="update-row">
             <span>{updateText(update) || `Версия ${settings.appVersion}`}</span>
             {update?.state === 'ready' || update?.state === 'installed' ? (
               <button type="button" className="btn btn-fire" onClick={() => api.installUpdate()}>
-                {update.state === 'installed' ? 'Перезапустить сейчас' : 'Обновить и перезапустить'}
+                Обновить и перезапустить
               </button>
             ) : (
               <button
@@ -246,6 +249,7 @@ export default function SettingsView({ api, settings, onSave, onApplySettings, u
             )}
           </div>
         </section>
+        <NetCheckPanel api={api} settings={settings} onSave={set} />
       </div>
     </div>
   );

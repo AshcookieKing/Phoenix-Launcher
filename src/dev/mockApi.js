@@ -89,4 +89,5 @@ window.phoenix = {
   pickPresetFile: async () => ({ canceled: true }), resetPreset: async () => ({ success: true, settings }),
   minimize() {}, close() {},
   onServers: noop, onLaunchProgress: noop, onLaunchRunning: noop, onLaunchReset: noop, onAccount: noop, onPairStatus: noop,
+  onNetCheck: noop, netCheckGet: async () => null, netCheckRun: async () => null, netCheckOpen: async () => ({ ok: true }),
 };

@@ -45,4 +45,8 @@ contextBridge.exposeInMainWorld('phoenix', {
   onLaunchReset: (cb) => on('launch-reset', cb),
   onAccount: (cb) => on('account-update', cb),
   onPairStatus: (cb) => on('pair-status', cb),
+  netCheckGet: () => ipcRenderer.invoke('netcheck-get'),
+  netCheckRun: (opts) => ipcRenderer.invoke('netcheck-run', opts),
+  netCheckOpen: () => ipcRenderer.invoke('netcheck-open'),
+  onNetCheck: (cb) => on('netcheck-update', cb),
 });

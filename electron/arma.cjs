@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawnDetached } = require('./safe-spawn.cjs');
 const https = require('https');
 const { autoResolvePaths, ARMA_APP_ID, parseLibraryFolders, workshopManifestPath } = require('./paths.cjs');
 
@@ -407,38 +407,19 @@ async function launchGame(config, modParam, signal) {
 
   const args = buildLaunchArgs(config, modParam);
 
-  return new Promise((resolve, reject) => {
-    // Без windowsHide — иначе GUI иногда не появляется и процесс «висит» в фоне
-    const child = spawn(armaExe, args, {
-      cwd: armaDir,
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: false,
-      env: {
-        ...process.env,
-        SteamAppId: String(ARMA_APP_ID),
-        SteamGameId: String(ARMA_APP_ID),
-      },
-    });
-
-    child.on('error', (err) => {
-      reject(new Error(err?.message || 'Не удалось запустить Arma 3'));
-    });
-
-    const pid = child.pid;
-    if (!pid) {
-      reject(new Error('Arma 3 не стартовала (нет PID)'));
-      return;
-    }
-    child.unref();
-    resolve({
-      ok: true,
-      exe: path.basename(armaExe),
-      pid,
-      viaSteam: false,
-      args,
-    });
+  // Без windowsHide — иначе GUI иногда не появляется и процесс «висит» в фоне
+  const started = await spawnDetached(armaExe, args, {
+    cwd: armaDir,
+    windowsHide: false,
+    env: {
+      ...process.env,
+      SteamAppId: String(ARMA_APP_ID),
+      SteamGameId: String(ARMA_APP_ID),
+    },
   });
+  if (!started.ok) throw new Error(started.message || 'Не удалось запустить Arma 3');
+  if (!started.pid) throw new Error('Arma 3 не стартовала (нет PID)');
+  return { ok: true, exe: path.basename(armaExe), pid: started.pid, viaSteam: false, args };
 }
 
 module.exports = {

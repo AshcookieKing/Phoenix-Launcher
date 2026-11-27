@@ -1,7 +1,7 @@
 // Steam Workshop helper for Arma 3. Each process owns its Steam API session until it exits.
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { trySpawn, describeSpawnError } = require('./safe-spawn.cjs');
 
 const STATE = { SUBSCRIBED: 1, INSTALLED: 4, NEEDS_UPDATE: 8, DOWNLOADING: 16, PENDING: 32 };
 const ERRORS = {
@@ -85,8 +85,10 @@ function runWorkshop(armaDir, mode, ids, { onStatus, repairIds = [] } = {}) {
       }
     };
 
-    child = spawn(helperPath(), [path.resolve(armaDir), mode, ...args], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
-    child.on('error', (err) => { failure = { ok: false, code: 'spawn', error: err.message }; });
+    const started = trySpawn(helperPath(), [path.resolve(armaDir), mode, ...args], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    if (!started.child) return resolve({ ok: false, code: 'spawn', error: started.message });
+    child = started.child;
+    child.on('error', (err) => { failure = { ok: false, code: 'spawn', error: describeSpawnError(err, helperPath()) }; });
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk) => {
       const lines = (buffer + chunk).split(/\r?\n/);

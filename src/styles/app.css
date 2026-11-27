@@ -1543,3 +1543,62 @@ kbd {
   margin-top: 6px;
   font-size: 13px;
 }
+
+/* Чекер сети (Настройки) */
+.netcheck {
+  grid-column: 1 / -1;
+}
+.netcheck-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+}
+.netcheck-sum {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.netcheck-actions {
+  display: flex;
+  gap: 8px;
+}
+.netcheck-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.netcheck-list li {
+  display: grid;
+  grid-template-columns: 16px 170px 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+.netcheck-list li b {
+  color: var(--text);
+  font-weight: 600;
+}
+.netcheck-list li em {
+  font-style: normal;
+  color: var(--amber);
+}
+.netcheck-list li.is-ok svg { color: #5fd38a; }
+.netcheck-list li.is-warn svg { color: var(--amber); }
+.netcheck-list li.is-fail svg { color: #ff5a4a; }
+.netcheck-list li.is-info svg { color: var(--text-faint); }
+.netcheck-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 24px;
+}
+.update-chip.is-bad {
+  color: #ffd2c8;
+  border-color: rgba(255, 90, 74, 0.55);
+  background: rgba(255, 60, 40, 0.16);
+}

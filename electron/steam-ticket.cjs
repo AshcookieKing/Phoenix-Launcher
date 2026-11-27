@@ -3,7 +3,7 @@
 // не просит подтверждать Steam в браузере. Без Steam/Arma - { ok: false }, вход идёт по-старому (Steam в браузере).
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { trySpawn, describeSpawnError } = require('./safe-spawn.cjs');
 
 function helperPath() {
   const packaged = process.resourcesPath ? path.join(process.resourcesPath, 'steam_ticket.exe') : '';
@@ -40,10 +40,16 @@ function getSteamTicket(armaDir, { holdSeconds = 45, timeoutMs = 15000 } = {}) {
       if (!result.ok) releaseSteamTicket();
       resolve(result);
     };
-    const child = spawn(exe, [armaDir, String(holdSeconds)], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    const started = trySpawn(exe, [armaDir, String(holdSeconds)], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    if (!started.child) {
+      done = true;
+      resolve({ ok: false, error: started.message });
+      return;
+    }
+    const child = started.child;
     current = child;
     const timer = setTimeout(() => finish({ ok: false, error: 'timeout' }), timeoutMs);
-    child.on('error', (e) => finish({ ok: false, error: e.message || 'spawn' }));
+    child.on('error', (e) => finish({ ok: false, error: describeSpawnError(e, exe) }));
     child.on('exit', () => {
       if (current === child) current = null;
       finish({ ok: false, error: 'exit' });

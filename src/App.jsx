@@ -6,7 +6,6 @@ import ModsView from './components/ModsView';
 import SystemsView from './components/SystemsView';
 import SettingsView from './components/SettingsView';
 import LaunchDock from './components/LaunchDock';
-import AuthGate from './components/AuthGate';
 import CharactersView from './components/Characters';
 import HoloNetView, { HoloNetReader } from './components/HoloNet';
 import { bindUiSounds } from './utils/uiSounds';
@@ -26,11 +25,11 @@ export default function App() {
   const [sync, setSync] = useState(null);
   const [syncError, setSyncError] = useState('');
   const [launch, setLaunch] = useState(IDLE);
-  const [authAsk, setAuthAsk] = useState(null); // { serverId } - запуск ждёт входа через Discord
   const [update, setUpdate] = useState(null); // автообновление из релизов GitHub
   const [holonet, setHolonet] = useState(null); // лента HoloNet из Discord Phoenix
   const [reading, setReading] = useState(null); // пост HoloNet, открытый с главной
   const [characters, setCharacters] = useState(null); // персонажи меню Phoenix из профиля Arma
+  const [net, setNet] = useState(null); // чекер сети Phoenix
 
   const refreshMods = useCallback(async (force = false) => {
     const sequence = ++checkSequence.current;
@@ -86,12 +85,14 @@ export default function App() {
       refreshHolonet();
       if (s.pathsValid) refreshMods();
       api.getUpdateStatus().then(setUpdate).catch(() => {});
+      api.netCheckGet?.().then((n) => n && setNet(n)).catch(() => {});
     })();
     const offs = [
       api.onServers(setServers),
       api.onAccount(setAccount),
       api.onHoloNet((feed) => feed && setHolonet((prev) => ({ ...prev, ...feed, online: true }))),
       api.onUpdateStatus(setUpdate),
+      api.onNetCheck?.(setNet),
       api.onModsSync((p) => { if (p) setSync(p); }),
       api.onLaunchProgress((p) => setLaunch((prev) => ({ ...prev, ...p, phase: 'preparing' }))),
       api.onLaunchRunning(() => setLaunch({ percent: 100, message: 'Игра запущена · удачной службы', phase: 'running' })),
@@ -117,22 +118,16 @@ export default function App() {
   }, [settings?.soundsEnabled]);
 
   const startGame = useCallback(
-    async (serverId = null, { skipAuth = false, profileName = '' } = {}) => {
+    async (serverId = null, { profileName = '' } = {}) => {
       if (launch.phase === 'preparing') return;
-      // Discord не привязан - сначала предложить вход (тогда меню в игре войдёт само)
-      if (!skipAuth && account?.steam && account.roles?.ok && !account.roles.linked) {
-        setAuthAsk({ serverId, profileName });
-        return;
-      }
-      setAuthAsk(null);
       setLaunch({ percent: 1, message: 'Подготовка…', phase: 'preparing' });
-      const res = await api.launch({ serverId, profileName });
+      const res = await api.launch({ serverId, profileName }).catch(() => ({ ok: false, error: 'Связь с лаунчером прервалась при запуске игры' }));
       if (!res.ok) {
         setLaunch(res.cancelled ? IDLE : { percent: 0, message: res.error || 'Ошибка запуска', phase: 'error' });
       }
       refreshMods(true);
     },
-    [launch.phase, refreshMods, account]
+    [launch.phase, refreshMods]
   );
 
   // «Играть» на карточке персонажа: игра под профилем Arma с его именем
@@ -178,7 +173,7 @@ export default function App() {
   return (
     <div className="app" data-anim={settings.animationsEnabled !== false ? 'on' : 'off'}>
       <Background animated={settings.animationsEnabled !== false} />
-      <TitleBar view={view} onView={setView} links={settings.links} api={api} update={update} />
+      <TitleBar view={view} onView={setView} links={settings.links} api={api} update={update} net={net} />
 
       <main className="stage">
         {view === 'home' && (
@@ -242,17 +237,6 @@ export default function App() {
         onOpenMods={() => setView('mods')}
         onOpenSettings={() => setView('settings')}
       />
-      {authAsk && (
-        <AuthGate
-          api={api}
-          onLinked={() => {
-            refreshAccount(true);
-            startGame(authAsk.serverId, { skipAuth: true, profileName: authAsk.profileName });
-          }}
-          onSkip={() => startGame(authAsk.serverId, { skipAuth: true, profileName: authAsk.profileName })}
-          onCancel={() => setAuthAsk(null)}
-        />
-      )}
       <HoloNetReader post={reading} api={api} onClose={() => setReading(null)} />
     </div>
   );
