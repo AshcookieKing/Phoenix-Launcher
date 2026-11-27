@@ -1,0 +1,72 @@
+# Сборка Phoenix Launcher и Phoenix NetCheck только из исходников этого репозитория (требование SignPath Foundation).
+# Запуск: вручную (Actions -> build -> Run workflow) или тегом vX.Y.Z. Результат - артефакт "phoenix-unsigned".
+# Релиз на GitHub выкладывается вручную из этого артефакта (после подписи, когда SignPath одобрит проект).
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.10.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Steam helpers (MinGW gcc)
+        shell: cmd
+        run: |
+          gcc --version || choco install mingw -y --no-progress
+          cd native
+          del /q steam_ticket.exe steam_workshop.exe
+          call build.bat
+          if not exist steam_ticket.exe exit /b 1
+          if not exist steam_workshop.exe exit /b 1
+
+      - name: Build Phoenix NetCheck
+        shell: pwsh
+        run: ./netcheck/build.ps1 -out "$PWD/netcheck/PhoenixNetCheck.exe"
+
+      - name: Tests
+        run: node --test tests/
+
+      - name: Build launcher (installer + portable)
+        run: npm run pack
+
+      - name: Collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item release/PhoenixLauncherSetup.exe, release/PhoenixLauncherSetup.exe.blockmap, release/latest.yml, release/PhoenixLauncher.exe, netcheck/PhoenixNetCheck.exe out/
+          Get-FileHash out/*.exe -Algorithm SHA256 | Format-Table -AutoSize
+
+      - uses: actions/upload-artifact@v4
+        id: upload
+        with:
+          name: phoenix-unsigned
+          path: out/
+          if-no-files-found: error
+
+      # После одобрения SignPath Foundation: подпись артефакта (organization-id и project-slug - из SignPath,
+      # токен - секрет SIGNPATH_API_TOKEN в настройках репозитория).
+      # - uses: signpath/github-action-submit-signing-request@v1
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: '<id>'
+      #     project-slug: 'Phoenix-Launcher'
+      #     signing-policy-slug: 'release-signing'
+      #     github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      #     wait-for-completion: true
+      #     output-artifact-directory: signed

@@ -3,6 +3,7 @@
   "version": "1.4.3",
   "description": "Phoenix Launcher — Arma 3 Star Wars RP",
   "author": "Ima Gun Di",
+  "license": "MIT",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {

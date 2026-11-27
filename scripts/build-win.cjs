@@ -7,5 +7,6 @@ const { build, Platform } = require('electron-builder');
 const out = process.argv[2];
 build({
   targets: Platform.WINDOWS.createTarget(['nsis', 'portable']),
+  publish: 'never', // релиз на GitHub выкладывается вручную, после проверки
   config: out ? { directories: { output: out } } : undefined,
 }).then(() => console.log('OK'), (e) => { console.error(e); process.exit(1); });

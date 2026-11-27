@@ -11,3 +11,5 @@ release_ts/
 release_new2/
 release_build/
 release_installtest
+netcheck/PhoenixNetCheck.exe
+release_*/
