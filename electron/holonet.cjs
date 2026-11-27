@@ -1,4 +1,4 @@
-// HoloNet: лента канала «holonet» Discord Phoenix. Канал читает бот «Phoenix | Online Bot» на хосте (.239,
+// HoloNet: лента канала «holonet» Discord Phoenix. Канал читает бот «Phoenix | Online Bot» на хосте (.45,
 // host\holonet_feed.py) - в лаунчере токена бота нет. Последняя лента хранится в настройках - видна и без сети.
 const http = require('http');
 const { HOLONET_API } = require('./phx-config.cjs');

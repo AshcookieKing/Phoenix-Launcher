@@ -1,4 +1,4 @@
-﻿# Установка HoloNet-ленты лаунчера на хосте Phoenix (.239): задача при старте Windows (SYSTEM) + правило брандмауэра.
+﻿# Установка HoloNet-ленты лаунчера на хосте Phoenix (.45): задача при старте Windows (SYSTEM) + правило брандмауэра.
 # Запуск: powershell -ExecutionPolicy Bypass -File C:\PhoenixHoloNet\install_holonet_feed.ps1
 $ErrorActionPreference = 'Stop'
 $dir = 'C:\PhoenixHoloNet'

@@ -15,7 +15,7 @@ Every release is approved by hand before signing.
 ## Privacy policy
 The program transfers no information to other networked systems unless the user or the person installing or
 operating it specifically asks for it. What it connects to:
-- Phoenix RP servers (109.248.4.45, 109.248.4.239, phoenixrp.ru) for server status, roles, the HoloNet news feed
+- Phoenix RP servers (109.248.4.45, phoenixrp.ru) for server status, roles, the HoloNet news feed
   and the Discord login the user starts;
 - Steam (through the local Steam client), for mod downloads and the login ticket;
 - GitHub (github.com), to check for and download launcher updates;
