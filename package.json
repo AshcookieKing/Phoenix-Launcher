@@ -62,7 +62,7 @@
       "uninstallDisplayName": "Phoenix Launcher",
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "runAfterFinish": true,
+      "runAfterFinish": false,
       "deleteAppDataOnUninstall": false,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
