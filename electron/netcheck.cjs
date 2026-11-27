@@ -1,7 +1,7 @@
 // Чекер сети Phoenix (PhoenixNetCheck.exe, исходник Desktop\PhoenixNetCheck) внутри лаунчера.
 // Без окна: --json <файл> - проверки (интернет, DNS, все серверы Phoenix, TeamSpeak, сервер входа, Steam и кэш его
-// загрузок, маршрут через VPN, zapret, брандмауэр, прокси, hosts, Discord), --fix auto - ещё и исправления.
-// Исправления с правами администратора чекер делает сам после одного запроса UAC.
+// загрузок, маршрут через VPN, zapret, брандмауэр, прокси, hosts, Discord). Систему не меняет.
+// --fix id,id - исправления, только когда игрок нажал «Исправить» и подтвердил список; права администратора - через UAC.
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
@@ -60,7 +60,6 @@ function createNetCheck({ dataDir, onUpdate }) {
             failed: data.failed || [],
             uacDenied: Boolean(data.uacDenied),
             problems: results.filter((r) => r.status === 'fail' || r.status === 'warn').length,
-            autoFixable: results.filter((r) => r.fix && r.auto && (r.status === 'fail' || r.status === 'warn')).map((r) => r.id),
           }));
         } catch {
           resolve(publish({ state: 'error', error: 'Чекер сети не ответил', at: Date.now() }));
@@ -79,19 +78,12 @@ function createNetCheck({ dataDir, onUpdate }) {
     return running;
   }
 
-  // При запуске лаунчера: проверить; нашлись проблемы с безопасным исправлением - исправить (autoFix)
-  async function startup(autoFix) {
-    const res = await run();
-    if (autoFix && res.state === 'done' && res.autoFixable.length) return run({ fix: res.autoFixable.join(',') });
-    return res;
-  }
-
-  // Полное окно чекера (zapret, маршруты мимо VPN, сброс Winsock) - само попросит права администратора
+  // Полное окно чекера (zapret, маршруты мимо VPN, сброс Winsock); права администратора - только по кнопке в нём
   function openWindow() {
     return spawnDetached(helperPath(), [], { windowsHide: false });
   }
 
-  return { run, startup, openWindow, get: () => last };
+  return { run, openWindow, get: () => last };
 }
 
 module.exports = { createNetCheck, helperPath };

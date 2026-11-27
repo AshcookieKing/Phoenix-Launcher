@@ -30,7 +30,7 @@ const STORE_KEYS = new Set([
   'armaExe', 'steamPath', 'workshopDir', 'pathsConfigured', 'presetPath',
   'autoUpdate', 'screenMode', 'optimizedLaunch', 'profilingLaunch', 'keepLogs', 'tsAutoConnect', 'performancePreset', 'extraLaunchArgs', 'skipLogos',
   'activeProfileId', 'profileMode', 'playerName', 'selectedServer', 'soundsEnabled', 'minimizeOnLaunch', 'animationsEnabled',
-  'netCheckOnStart', 'netAutoFix', 'reserveProxy',
+  'netCheckOnStart', 'reserveProxy',
 ]);
 
 const store = new Store({
@@ -62,7 +62,6 @@ const store = new Store({
     // чекер сети Phoenix при запуске лаунчера и безопасные исправления (сброс DNS, hosts, брандмауэр, zapret)
     reserveProxy: false,
     netCheckOnStart: true,
-    netAutoFix: true,
   },
 });
 // 1.2.4: TeamSpeak перед игрой включён по умолчанию, но electron-store уже записал старое значение по умолчанию (false)
@@ -386,8 +385,8 @@ app.whenReady().then(async () => {
     startServerPolling();
     holonet.start();
     if (store.get('netCheckOnStart') !== false) {
-      // самотест - только проверка (без исправлений и UAC)
-      netcheck.startup(!process.env.PHX_SELFTEST && store.get('netAutoFix') !== false).catch(() => {});
+      // при запуске - только проверка: систему лаунчер меняет лишь по кнопке «Исправить»
+      netcheck.run().catch(() => {});
     }
   });
   updater = createUpdater({
@@ -567,7 +566,7 @@ ipcMain.handle('get-account', (_, { force = false } = {}) => getAccount(force));
 
 ipcMain.handle('netcheck-get', () => netcheck?.get() || null);
 ipcMain.handle('netcheck-run', (_, { fix = null } = {}) => {
-  const ids = fix === 'auto' || fix === null || /^[a-z0-9_,]{1,200}$/.test(String(fix)) ? fix : null;
+  const ids = fix !== null && fix !== 'auto' && /^[a-z0-9_,]{1,200}$/.test(String(fix)) ? fix : null;
   return netcheck?.run({ fix: ids }) ?? { state: 'error', error: 'Чекер недоступен' };
 });
 ipcMain.handle('netcheck-open', () => netcheck?.openWindow() ?? { ok: false });

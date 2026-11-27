@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { IconAlert, IconCheck, IconExternal, IconRefresh, IconSignal } from './Icons';
 
+const NL = String.fromCharCode(10);
 const STATUS_ICON = { ok: IconCheck, warn: IconAlert, fail: IconAlert, info: IconSignal };
 
 export function netSummary(net) {
@@ -39,7 +40,10 @@ export default function NetCheckPanel({ api, settings, onSave }) {
             <IconRefresh size={16} /> Проверить
           </button>
           {fixable.length > 0 && (
-            <button type="button" className="btn btn-fire" disabled={busy} onClick={() => api.netCheckRun({ fix: fixable.map((r) => r.id).join(',') })}>
+            <button type="button" className="btn btn-fire" disabled={busy} onClick={() => {
+              const list = fixable.map((r) => `• ${r.name}: ${r.fix}${r.admin ? ' (права администратора)' : ''}`).join(NL);
+              if (window.confirm(`Будет изменено на этом ПК:${NL}${list}${NL}${NL}Продолжить?`)) api.netCheckRun({ fix: fixable.map((r) => r.id).join(',') });
+            }}>
               Исправить ({fixable.length})
             </button>
           )}
@@ -79,17 +83,9 @@ export default function NetCheckPanel({ api, settings, onSave }) {
         <label className="toggle">
           <span className="toggle-text">
             <b>Проверять сеть при запуске</b>
-            <small>Серверы Phoenix, Steam, Discord, DNS, hosts, VPN и zapret</small>
+            <small>Только чтение: серверы Phoenix, Steam, Discord, DNS, hosts, VPN и zapret. Изменения — лишь кнопкой «Исправить» с подтверждением</small>
           </span>
           <input type="checkbox" checked={settings.netCheckOnStart !== false} onChange={(e) => onSave({ netCheckOnStart: e.target.checked })} />
-          <span className="toggle-track" aria-hidden><span /></span>
-        </label>
-        <label className="toggle">
-          <span className="toggle-text">
-            <b>Исправлять найденное само</b>
-            <small>Сброс DNS, строки hosts, блокировка Arma в брандмауэре, исключение сервера в zapret, кэш Steam. Маршруты мимо VPN и прокси — только кнопкой</small>
-          </span>
-          <input type="checkbox" checked={settings.netAutoFix !== false} onChange={(e) => onSave({ netAutoFix: e.target.checked })} />
           <span className="toggle-track" aria-hidden><span /></span>
         </label>
       </div>
