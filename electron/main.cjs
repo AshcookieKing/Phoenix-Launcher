@@ -278,7 +278,7 @@ async function getAccount(force = false) {
   if (!steam) return { steam: null, roles: null };
   const roles = await getMenuRoles(steam.steamId);
   return {
-    steam: { steamId: steam.steamId, personaName: steam.personaName || steam.accountName },
+    steam: { steamId: steam.steamId, personaName: steam.personaName || steam.accountName, avatarUrl: steam.avatarUrl || '' },
     roles,
   };
 }
@@ -582,7 +582,7 @@ ipcMain.handle('menu-pair-start', async () => {
       store.set('menuTokens', { ...(store.get('menuTokens') || {}), [steam.steamId]: pair.token });
       send('pair-status', { status: 'linked' });
       send('account-update', {
-        steam: { steamId: steam.steamId, personaName: steam.personaName || steam.accountName },
+        steam: { steamId: steam.steamId, personaName: steam.personaName || steam.accountName, avatarUrl: steam.avatarUrl || '' },
         roles,
       });
       if (Notification.isSupported()) {

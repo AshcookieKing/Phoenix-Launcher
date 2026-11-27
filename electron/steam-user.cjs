@@ -1,8 +1,10 @@
-// Текущий аккаунт Steam (SteamID64) — нужен для phx_roleapi
+// Текущий аккаунт Steam (SteamID64 + ник + аватар) — нужен для phx_roleapi и карточки профиля.
 // SteamID берётся из appmanifest_107410.acf (поле LastOwner) без чтения loginusers.vdf,
 // так как чтение Steam\config\loginusers.vdf из неподписанного Electron exe триггерит KES PDM (708dfca5).
+// Ник и аватарка подгружаются с публичного XML-профиля Steam (без API-ключа).
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const { collectSteamLibraries, ARMA_APP_ID } = require('./paths.cjs');
 
 // --- Парсер loginusers.vdf (оставлен для совместимости экспорта, не вызывается) ---
@@ -28,7 +30,6 @@ function parseLoginUsers(text) {
 }
 
 // --- Получение SteamID64 из appmanifest_107410.acf (поле LastOwner) ---
-// Это безопасный путь: ACF-файл не вызывает детекций KES PDM
 function getSteamIdFromAppManifest() {
   try {
     const libs = collectSteamLibraries();
@@ -45,6 +46,46 @@ function getSteamIdFromAppManifest() {
   return null;
 }
 
+function extractXmlTag(xml, tag) {
+  const re = new RegExp(`<${tag}>\\s*(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([^<]*))\\s*</${tag}>`, 'i');
+  const m = xml.match(re);
+  return m ? (m[1] ?? m[2] ?? '').trim() : '';
+}
+
+function fetchPublicSteamProfile(steamId, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const req = https.get(
+      `https://steamcommunity.com/profiles/${steamId}/?xml=1`,
+      { timeout: timeoutMs, headers: { 'User-Agent': 'PhoenixLauncher/1.4' } },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          return resolve(null);
+        }
+        let data = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          data += chunk;
+          if (data.length > 128 * 1024) {
+            req.destroy();
+            resolve(null);
+          }
+        });
+        res.on('end', () => {
+          const personaName = extractXmlTag(data, 'steamID');
+          const avatarUrl = extractXmlTag(data, 'avatarMedium') || extractXmlTag(data, 'avatarIcon');
+          resolve(personaName || avatarUrl ? { personaName, avatarUrl } : null);
+        });
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
 let cache = null;
 
 async function getSteamUser({ force = false } = {}) {
@@ -53,10 +94,15 @@ async function getSteamUser({ force = false } = {}) {
   try {
     const steamId = getSteamIdFromAppManifest();
     if (steamId) {
+      const profile = await fetchPublicSteamProfile(steamId);
+      const prev = cache?.user?.steamId === steamId ? cache.user : null;
+      const personaName = profile?.personaName || prev?.personaName || '';
+      const avatarUrl = profile?.avatarUrl || prev?.avatarUrl || '';
       user = {
         steamId,
-        personaName: '',
-        accountName: '',
+        personaName,
+        accountName: personaName,
+        avatarUrl,
         mostRecent: true,
         timestamp: 0,
       };
