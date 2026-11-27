@@ -1,6 +1,6 @@
 {
   "name": "phoenix-launcher",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Phoenix Launcher — Arma 3 Star Wars RP",
   "author": "Ima Gun Di",
   "license": "MIT",
@@ -47,24 +47,16 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "icon": "build/icon.ico"
-    },
-    "portable": {
-      "artifactName": "PhoenixLauncher.exe"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": true,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
       "artifactName": "PhoenixLauncherSetup.exe",
       "shortcutName": "Phoenix Launcher",
       "uninstallDisplayName": "Phoenix Launcher",
@@ -75,8 +67,7 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "language": "1049",
-      "multiLanguageInstaller": false,
-      "include": "build/installer.nsh"
+      "multiLanguageInstaller": false
     }
   },
   "dependencies": {

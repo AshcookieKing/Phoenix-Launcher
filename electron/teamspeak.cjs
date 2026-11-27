@@ -3,17 +3,9 @@
 // поэтому ищем ts3client_win64.exe сами: Program Files, реестр (деинсталляторы, обработчик ts3file), профиль.
 const fs = require('fs');
 const path = require('path');
-const { execFileSync, spawn } = require('child_process');
+const { spawn } = require('child_process');
 
-function regValues(key) {
-  try {
-    return execFileSync('reg', ['query', key, '/s'], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
-  } catch {
-    return '';
-  }
-}
-
-// путь к клиенту запоминаем: опрос реестра занимает секунды и подвешивает окно лаунчера
+// путь к клиенту запоминаем: опрос диска занимает доли секунды
 let ts3ExeCache = null;
 function findTs3Client() {
   if (ts3ExeCache && fs.existsSync(ts3ExeCache)) return ts3ExeCache;
@@ -22,31 +14,25 @@ function findTs3Client() {
 }
 
 function findTs3ClientUncached() {
-  // сначала Program Files (обычно свежая установка), копия в профиле - последней: там бывает старая 3.1.x,
-  // которую Windows без прав администратора не запускает (EACCES, 25.10)
-  const found = [
+  const candidates = [
     'C:\\Program Files\\TeamSpeak 3 Client\\ts3client_win64.exe',
     'C:\\Program Files (x86)\\TeamSpeak 3 Client\\ts3client_win32.exe',
+    'C:\\Program Files\\TeamSpeak 3 Client\\ts3client_win32.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'TeamSpeak 3 Client', 'ts3client_win64.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'TeamSpeak 3 Client', 'ts3client_win64.exe'),
   ];
-  // деинсталляторы «TeamSpeak 3 Client»: InstallLocation
-  for (const root of [
-    'HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
-    'HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
-    'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
-  ]) {
-    const txt = regValues(root);
-    for (const block of txt.split(/\r?\n(?=HKEY_)/)) {
-      if (!/DisplayName\s+REG_SZ\s+TeamSpeak 3 Client/i.test(block)) continue;
-      const loc = block.match(/InstallLocation\s+REG_SZ\s+(.+)/i);
-      if (loc) found.push(path.join(loc[1].trim().replace(/^"|"$/g, ''), 'ts3client_win64.exe'));
-    }
+  for (const drive of ['D', 'E', 'F', 'G']) {
+    candidates.push(`${drive}:\\Program Files\\TeamSpeak 3 Client\\ts3client_win64.exe`);
+    candidates.push(`${drive}:\\Program Files (x86)\\TeamSpeak 3 Client\\ts3client_win32.exe`);
+    candidates.push(`${drive}:\\TeamSpeak 3 Client\\ts3client_win64.exe`);
   }
-  // обработчик файлов ts3file: "...\ts3client_win64.exe" "%1"
-  const h = regValues('HKCR\\ts3file\\shell\\open\\command');
-  const m = h.match(/"([^"]*ts3client_win(?:64|32)\.exe)"/i);
-  if (m) found.push(m[1]);
-  found.push(path.join(process.env.LOCALAPPDATA || '', 'TeamSpeak 3 Client', 'ts3client_win64.exe'));
-  return found.find((p) => p && fs.existsSync(p)) || null;
+  return candidates.find((p) => {
+    try {
+      return p && fs.existsSync(p);
+    } catch {
+      return false;
+    }
+  }) || null;
 }
 
 // { ok: true, exe } | { ok: false, error }
@@ -228,12 +214,7 @@ function ensureTfarPlugin(pkg) {
 }
 
 function ts3Running() {
-  try {
-    return /ts3client_win/i.test(execFileSync('tasklist', ['/FI', 'IMAGENAME eq ts3client_win64.exe', '/NH'],
-      { encoding: 'utf8', windowsHide: true, timeout: 5000 }));
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 module.exports = { findTs3Client, connectTeamSpeak, tsConnectedCount, ensureTeamSpeak, ensureTfarPlugin, ts3Running };

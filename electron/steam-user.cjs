@@ -9,6 +9,11 @@ function steamInstallCandidates(regSteam) {
   const x86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
   list.push(path.join(x86, 'Steam'));
   list.push(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Steam'));
+  for (const drive of ['C', 'D', 'E', 'F', 'G']) {
+    list.push(`${drive}:\\Steam`);
+    list.push(`${drive}:\\SteamLibrary`);
+    list.push(`${drive}:\\Games\\Steam`);
+  }
   return [...new Set(list)];
 }
 

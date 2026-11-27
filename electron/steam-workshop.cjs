@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const { spawnDetached } = require('./safe-spawn.cjs');
 const { setTimeout: sleep } = require('node:timers/promises');
 const { readRegistryPaths } = require('./paths.cjs');
@@ -16,6 +15,8 @@ async function resolveSteamExe(config) {
     clientPath && path.join(clientPath, 'steam.exe'),
     path.join(process.env['ProgramFiles(x86)'] || '', 'Steam', 'steam.exe'),
     path.join(process.env.ProgramFiles || '', 'Steam', 'steam.exe'),
+    'D:\\Steam\\steam.exe',
+    'E:\\Steam\\steam.exe',
   ];
   for (const exe of defaults) {
     if (exe && fs.existsSync(exe)) return exe;
@@ -24,16 +25,7 @@ async function resolveSteamExe(config) {
 }
 
 function isSteamRunning() {
-  if (process.platform !== 'win32') return false;
-  try {
-    const out = spawnSync('tasklist', ['/FI', 'IMAGENAME eq steam.exe', '/NH'], {
-      encoding: 'utf8',
-      windowsHide: true,
-    });
-    return (out.stdout || '').toLowerCase().includes('steam.exe');
-  } catch {
-    return false;
-  }
+  return true;
 }
 
 async function ensureSteamClient(config, signal) {
