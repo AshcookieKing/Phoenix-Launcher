@@ -38,7 +38,7 @@ export default function HomeView({
           <img src="./assets/phoenix_logo.png" alt="Arma Phoenix — Star Wars RP" />
         </div>
         <AccountCard api={api} account={account} onRefresh={onRefreshAccount} compact />
-        <CharactersMini data={characters} onOpen={onOpenCharacters} />
+        <CharactersMini data={characters} roles={account?.roles} onOpen={onOpenCharacters} />
       </section>
 
       <section className="home-right">

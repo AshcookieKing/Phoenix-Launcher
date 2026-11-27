@@ -25,6 +25,27 @@ function slotInfo(n, roles) {
   return { locked: false, hint: n === 1 ? 'Только клон регулярной армии' : 'Клон или открытая вам сторона' };
 }
 
+// Звание и батальон клона: в профиле меню хранится звание на момент создания (обычно CR),
+// настоящее - роль Discord (phx_roleapi rank/battalion), без входа - из имени профиля Arma «[CG] PVT 3485 Имя».
+const PROFILE_RANK = /^\s*\[([^\]]{1,8})\]\s+([A-Za-z]{2,5})\s+\d/;
+export function withLiveRank(char, roles) {
+  if (!char || char.kind !== 'cadet') return char;
+  const linked = Boolean(roles?.ok && roles.linked);
+  const claim = linked ? (roles.claims || []).find((c) => c.localId === char.id) : null;
+  if (claim && claim.status === 'pending') return { ...char, claimPending: true, rank: char.rank };
+  const m = String(char.profile || '').match(PROFILE_RANK);
+  let rank = char.rank;
+  let battalion = char.battalion;
+  if (linked && (roles.rank || roles.recruit)) {
+    rank = roles.rank || 'CR';
+    battalion = roles.battalion || battalion;
+  } else if (m) {
+    rank = m[2].toUpperCase();
+    battalion = battalion || m[1];
+  }
+  return { ...char, rank, battalion, claimPending: char.claimPending && !(claim && claim.status !== 'pending') };
+}
+
 function Stat({ label, value }) {
   return (
     <div className="char-stat">
@@ -112,7 +133,7 @@ export default function CharactersView({ data, roles, busy, onRefresh, onPlay })
       <div className="chars-grid">
         {[1, 2, 3].map((n) =>
           bySlot.has(n) ? (
-            <CharacterCard key={n} char={bySlot.get(n)} onPlay={onPlay} busy={busy} />
+            <CharacterCard key={n} char={withLiveRank(bySlot.get(n), roles)} onPlay={onPlay} busy={busy} />
           ) : (
             <EmptySlot key={n} n={n} roles={roles} />
           )
@@ -142,8 +163,8 @@ export default function CharactersView({ data, roles, busy, onRefresh, onPlay })
 }
 
 // Короткий список на главной
-export function CharactersMini({ data, onOpen }) {
-  const chars = data?.chars || [];
+export function CharactersMini({ data, roles, onOpen }) {
+  const chars = (data?.chars || []).map((c) => withLiveRank(c, roles));
   return (
     <div className="panel chars-mini">
       <div className="chars-mini-head">
