@@ -1,13 +1,11 @@
 // Автообновление по релизам GitHub (AshcookieKing/Phoenix-Launcher).
-// С 1.4.0 лаунчер ставится установщиком NSIS (PhoenixLauncherSetup.exe) в %LOCALAPPDATA%\Programs\PhoenixLauncher
-// (или Program Files, если при установке выбрать «для всех пользователей»). В %TEMP% ничего не распаковывается:
-// обновление скачивается в папку данных лаунчера (%APPDATA%\PhoenixLauncher\updates) и ставится тихо (/S) -
-// по кнопке «Перезапустить» или само при закрытии лаунчера. Старая portable-сборка (PhoenixLauncher.exe) этим же
-// путём переходит на установленную версию. Без PowerShell/cmd (их антивирусы считают признаком вредоноса).
+// С 1.4.3 лаунчер ставится установщиком NSIS (PhoenixLauncherSetup.exe) в Program Files. В %TEMP% ничего не
+// распаковывается: обновление скачивается в папку данных лаунчера (%APPDATA%\PhoenixLauncher\updates), а по кнопке
+// «Перезапустить» открывается обычный установщик (окно установки и запрос прав Windows). Тихих установок нет.
+// Старая portable-сборка (PhoenixLauncher.exe) этим же путём переходит на установленную версию. Без PowerShell/cmd.
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const { spawnDetached } = require('./safe-spawn.cjs');
 
 const REPO = 'AshcookieKing/Phoenix-Launcher';
 const ASSET = 'PhoenixLauncherSetup.exe';
@@ -188,37 +186,32 @@ function createUpdater({ appVersion, onStatus, isAutoEnabled, updatesDir, packag
     set({ state: 'ready', percent: 100, ...info });
   }
 
-  // Тихая установка поверх прежней (NSIS сам находит папку прошлой установки; для Program Files спросит UAC).
-  // run=true - запустить лаунчер после установки (--force-run).
-  async function runSetup(run) {
+  // Обычный запуск установщика через Проводник (ShellExecute): игрок видит окно установки и запрос прав Windows.
+  async function runSetup() {
     if (installing) return { ok: true };
     if (!fs.existsSync(setupFile)) return { ok: false, error: 'Обновление ещё не скачано' };
     installing = true;
-    const args = ['/S', '--updated'];
-    if (run) args.push('--force-run');
-    const res = await spawnDetached(setupFile, args, { cwd: updatesDir, windowsHide: false });
-    if (!res.ok) {
+    const err = await require('electron').shell.openPath(setupFile);
+    if (err) {
       installing = false;
       // установщик заблокирован (антивирус/SmartScreen) - страница релиза, поставить вручную
       try {
         require('electron').shell.openExternal(status.url || `https://github.com/${REPO}/releases/latest`);
       } catch {}
-      return { ok: false, error: res.message };
+      return { ok: false, error: err };
     }
     return { ok: true };
   }
 
   async function install(app) {
     if (status.state !== 'ready') return { ok: false, error: 'Обновление ещё не скачано' };
-    const res = await runSetup(true);
+    const res = await runSetup();
     if (res.ok) setTimeout(() => app.exit(0), 300);
     return res;
   }
 
-  // Закрытие лаунчера со скачанным обновлением - поставить его (без запуска)
-  function installOnQuit() {
-    if (status.state === 'ready' && !installing && isAutoEnabled()) runSetup(false).catch(() => {});
-  }
+  // при закрытии лаунчера ничего само не ставится - только по кнопке «Перезапустить»
+  function installOnQuit() {}
 
   return { check, install, installOnQuit, getStatus: () => status, portable };
 }

@@ -15,7 +15,7 @@ const { getSteamUser } = require('./steam-user.cjs');
 const { getMenuRoles, startMenuPair, unlinkMenu } = require('./phx-api.cjs');
 const { getSteamTicket, releaseSteamTicket } = require('./steam-ticket.cjs');
 const { createUpdater } = require('./updater.cjs');
-const { createNetCheck } = require('./netcheck.cjs');
+const { createNetCheck, NETCHECK_URL } = require('./netcheck.cjs');
 const { SERVERS, LINKS } = require('./phx-config.cjs');
 const { connectTeamSpeak, ensureTeamSpeak, ensureTfarPlugin, ts3Running } = require('./teamspeak.cjs');
 
@@ -379,7 +379,7 @@ app.whenReady().then(async () => {
   await ensurePaths();
   require('./phx-api.cjs').configureReserve(() => store.get('reserveProxy') === true);
   holonet = createHoloNet(store, (feed) => send('holonet-update', feed));
-  netcheck = createNetCheck({ dataDir: path.join(app.getPath('userData'), 'netcheck'), onUpdate: (s) => send('netcheck-update', s) });
+  netcheck = createNetCheck({ onUpdate: (s) => send('netcheck-update', s), resolveProxy: (u) => require('electron').session.defaultSession.resolveProxy(u) });
   createWindow();
   mainWindow.webContents.once('did-finish-load', () => {
     startServerPolling();
@@ -565,11 +565,9 @@ ipcMain.handle('get-holonet', async (_, { force = false } = {}) => {
 ipcMain.handle('get-account', (_, { force = false } = {}) => getAccount(force));
 
 ipcMain.handle('netcheck-get', () => netcheck?.get() || null);
-ipcMain.handle('netcheck-run', (_, { fix = null } = {}) => {
-  const ids = fix !== null && fix !== 'auto' && /^[a-z0-9_,]{1,200}$/.test(String(fix)) ? fix : null;
-  return netcheck?.run({ fix: ids }) ?? { state: 'error', error: 'Чекер недоступен' };
-});
-ipcMain.handle('netcheck-open', () => netcheck?.openWindow() ?? { ok: false });
+ipcMain.handle('netcheck-run', () => netcheck?.run() ?? { state: 'error', error: 'Проверка недоступна' });
+// отдельная программа Phoenix NetCheck (исправления) - только страница скачивания в браузере
+ipcMain.handle('netcheck-open', () => { shell.openExternal(NETCHECK_URL); return { ok: true }; });
 
 // Привязка Discord к меню Phoenix: тот же путь, что у кнопки «Войти через Discord» в игре
 ipcMain.handle('menu-pair-start', async () => {

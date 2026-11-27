@@ -1,24 +1,20 @@
 import { useEffect, useState } from 'react';
 import { IconAlert, IconCheck, IconExternal, IconRefresh, IconSignal } from './Icons';
 
-const NL = String.fromCharCode(10);
 const STATUS_ICON = { ok: IconCheck, warn: IconAlert, fail: IconAlert, info: IconSignal };
 
 export function netSummary(net) {
   if (!net) return '';
   if (net.state === 'checking') return 'Проверка сети…';
-  if (net.state === 'fixing') return 'Исправление сети… (Windows может спросить разрешение)';
-  if (net.state === 'error') return `Чекер сети: ${net.error}`;
+  if (net.state === 'error') return `Проверка сети: ${net.error}`;
   if (!net.results) return '';
   const fails = net.results.filter((r) => r.status === 'fail').length;
   const warns = net.results.filter((r) => r.status === 'warn').length;
   let text = fails || warns ? `Сеть: ошибок ${fails}, предупреждений ${warns}` : 'Сеть в порядке';
-  if (net.fixed?.length) text += ` · исправлено: ${net.fixed.length}`;
-  if (net.uacDenied) text += ' · исправления без разрешения администратора не выполнены';
   return text;
 }
 
-// Чекер сети Phoenix: результаты, «Исправить», полное окно чекера (zapret, обход VPN, сброс Winsock)
+// Проверка сети Phoenix (только чтение) и ссылка на отдельную программу Phoenix NetCheck
 export default function NetCheckPanel({ api, settings, onSave }) {
   const [net, setNet] = useState(null);
 
@@ -27,8 +23,7 @@ export default function NetCheckPanel({ api, settings, onSave }) {
     return api.onNetCheck?.(setNet);
   }, [api]);
 
-  const busy = net?.state === 'checking' || net?.state === 'fixing';
-  const fixable = (net?.results || []).filter((r) => r.fix && r.status !== 'ok' && r.status !== 'info');
+  const busy = net?.state === 'checking';
 
   return (
     <section className="panel settings-block netcheck">
@@ -39,16 +34,8 @@ export default function NetCheckPanel({ api, settings, onSave }) {
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => api.netCheckRun({})}>
             <IconRefresh size={16} /> Проверить
           </button>
-          {fixable.length > 0 && (
-            <button type="button" className="btn btn-fire" disabled={busy} onClick={() => {
-              const list = fixable.map((r) => `• ${r.name}: ${r.fix}${r.admin ? ' (права администратора)' : ''}`).join(NL);
-              if (window.confirm(`Будет изменено на этом ПК:${NL}${list}${NL}${NL}Продолжить?`)) api.netCheckRun({ fix: fixable.map((r) => r.id).join(',') });
-            }}>
-              Исправить ({fixable.length})
-            </button>
-          )}
-          <button type="button" className="btn btn-ghost" onClick={() => api.netCheckOpen()} title="Полное окно чекера: zapret, серверы мимо VPN, сброс DNS и Winsock">
-            <IconExternal size={16} /> Окно чекера
+          <button type="button" className="btn btn-ghost" onClick={() => api.netCheckOpen()} title="Отдельная программа Phoenix NetCheck с исправлениями (zapret, VPN, DNS). Откроется страница скачивания">
+            <IconExternal size={16} /> Phoenix NetCheck
           </button>
         </div>
       </div>
@@ -63,7 +50,7 @@ export default function NetCheckPanel({ api, settings, onSave }) {
                 <b>{r.name}</b>
                 <span>
                   {r.detail}
-                  {r.fix && r.status !== 'ok' && <em> → {r.fix}{r.admin ? ' (права администратора)' : ''}</em>}
+                  {r.hint && <em> → {r.hint}</em>}
                 </span>
               </li>
             );
@@ -83,7 +70,7 @@ export default function NetCheckPanel({ api, settings, onSave }) {
         <label className="toggle">
           <span className="toggle-text">
             <b>Проверять сеть при запуске</b>
-            <small>Только чтение: серверы Phoenix, Steam, Discord, DNS, hosts, VPN и zapret. Изменения — лишь кнопкой «Исправить» с подтверждением</small>
+            <small>Только чтение: серверы Phoenix, Steam, Discord, DNS, hosts, VPN и zapret. Лаунчер ничего на ПК не меняет</small>
           </span>
           <input type="checkbox" checked={settings.netCheckOnStart !== false} onChange={(e) => onSave({ netCheckOnStart: e.target.checked })} />
           <span className="toggle-track" aria-hidden><span /></span>
