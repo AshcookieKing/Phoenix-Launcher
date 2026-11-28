@@ -60,15 +60,37 @@ function isPrivate(ip) {
 }
 
 function readHosts() {
-  return null;
+  try {
+    return fs.readFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'drivers', 'etc', 'hosts'), 'utf8')
+      .split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  } catch { return null; }
 }
 
 function winwsRunning() {
-  return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const r = trySpawn('tasklist', ['/FI', 'IMAGENAME eq winws.exe', '/NH'], { windowsHide: true });
+    if (!r.child) return resolve(false);
+    let out = '';
+    r.child.stdout.on('data', (d) => { out += d; });
+    r.child.once('error', () => resolve(false));
+    r.child.once('exit', () => resolve(/winws\.exe/i.test(out)));
+  });
 }
 
+// папки zapret на Рабочем столе / в Загрузках: есть ли сервер в lists\ipset-exclude-user.txt
 function zapretFolders() {
-  return [];
+  const home = os.homedir();
+  const roots = [path.join(home, 'Desktop'), path.join(home, 'Downloads'), path.join(home, 'OneDrive', 'Desktop')];
+  const found = [];
+  for (const r of roots) {
+    try {
+      for (const d of fs.readdirSync(r)) {
+        const full = path.join(r, d);
+        if (/zapret/i.test(d) && fs.existsSync(path.join(full, 'bin', 'winws.exe'))) found.push(full);
+      }
+    } catch {}
+  }
+  return found;
 }
 
 async function runChecks({ resolveProxy } = {}) {
