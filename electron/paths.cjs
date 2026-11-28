@@ -1,32 +1,34 @@
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
 
 const ARMA_APP_ID = '107410';
 
-// Одно значение реестра через reg.exe (без PowerShell: скрытый PowerShell антивирусы считают признаком вредоноса)
-function regValue(key, name) {
-  return new Promise((resolve) => {
-    execFile('reg', ['query', key, '/v', name], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (err, stdout) => {
-      if (err || !stdout) {
-        resolve('');
-        return;
-      }
-      const m = stdout.match(new RegExp(`^\\s*${name}\\s+REG_(?:EXPAND_)?SZ\\s+(.+?)\\s*$`, 'im'));
-      resolve(m ? m[1] : '');
-    });
+// Поиск стандартных путей установки Steam на дисках без использования reg.exe (без скрытых дочерних процессов)
+function findSteamRoots() {
+  const candidates = [];
+  const p86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const p = process.env.ProgramFiles || 'C:\\Program Files';
+  candidates.push(path.join(p86, 'Steam'));
+  candidates.push(path.join(p, 'Steam'));
+  for (const drive of ['C', 'D', 'E', 'F', 'G']) {
+    candidates.push(`${drive}:\\Steam`);
+    candidates.push(`${drive}:\\SteamLibrary`);
+    candidates.push(`${drive}:\\Games\\Steam`);
+    candidates.push(`${drive}:\\Games\\SteamLibrary`);
+  }
+  return candidates.filter((d) => {
+    try {
+      return fs.existsSync(d);
+    } catch {
+      return false;
+    }
   });
 }
 
 async function readRegistryPaths() {
-  if (process.platform !== 'win32') return {};
-  const steamPath = await regValue('HKCU\\Software\\Valve\\Steam', 'SteamPath');
-  let armaPath = '';
-  for (const key of ['HKLM\\SOFTWARE\\WOW6432Node\\Bohemia Interactive\\Arma 3', 'HKLM\\SOFTWARE\\Bohemia Interactive\\Arma 3']) {
-    armaPath = await regValue(key, 'main');
-    if (armaPath) break;
-  }
-  return { steamPath: steamPath || undefined, armaPath: armaPath || undefined };
+  // Для обратной совместимости: возвращаем найденный на диске путь Steam без вызова reg.exe
+  const roots = findSteamRoots();
+  return { steamPath: roots[0] || undefined, armaPath: undefined };
 }
 
 function parseLibraryFolders(steamPath) {
@@ -127,7 +129,6 @@ function validateGamePaths({ armaExe, workshopDir } = {}) {
   } else if (!/^arma3_x64(_profiling)?\.exe$/i.test(path.basename(exe))) {
     errors.push('Нужен файл arma3_x64.exe (или profiling)');
   }
-  // При первой подписке Steam сам создаёт workshop/content/107410 в библиотеке игры.
   const expected = derivePathsFromArmaExe(exe).workshopDir;
   const isDerived = workshop && expected && path.relative(expected, workshop) === '';
   let validWorkshop = false;
@@ -141,7 +142,7 @@ function validateGamePaths({ armaExe, workshopDir } = {}) {
   return { valid: errors.length === 0, errors };
 }
 
-function collectSteamLibraries(reg = {}) {
+function collectSteamLibraries() {
   const libraries = [];
   const addLib = (root) => {
     if (!root || !fs.existsSync(root)) return;
@@ -149,23 +150,16 @@ function collectSteamLibraries(reg = {}) {
       if (!libraries.includes(lib)) libraries.push(lib);
     }
   };
-  if (reg.steamPath) addLib(reg.steamPath);
-  const programX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-  addLib(path.join(programX86, 'Steam'));
+  for (const root of findSteamRoots()) {
+    addLib(root);
+  }
   return libraries;
 }
 
 async function detectGamePaths() {
-  const reg = await readRegistryPaths();
-  const libraries = collectSteamLibraries(reg);
+  const libraries = collectSteamLibraries();
   const arma = findArmaInstall(libraries);
-
-  let armaExe = arma?.armaExe || '';
-  if (!armaExe && reg.armaPath) {
-    const fromReg = path.join(reg.armaPath, 'arma3_x64.exe');
-    if (fs.existsSync(fromReg)) armaExe = fromReg;
-  }
-
+  const armaExe = arma?.armaExe || '';
   const derived = derivePathsFromArmaExe(armaExe);
   const workshop = derived.workshopDir ? derived : findWorkshopDir(libraries);
 
@@ -180,19 +174,43 @@ async function detectGamePaths() {
 }
 
 async function autoResolvePaths(stored = {}) {
-  const detected = await detectGamePaths();
+  // Если путь к игре уже сохранен и файл существует — работаем мгновенно без сканирования дисков
   const storedExe = stored.armaExe && fs.existsSync(stored.armaExe) ? stored.armaExe : '';
-  const armaExe = storedExe || detected.armaExe;
+  if (storedExe) {
+    const derived = derivePathsFromArmaExe(storedExe);
+    const storedWorkshop = stored.workshopDir && fs.existsSync(stored.workshopDir) ? stored.workshopDir : '';
+    const storedSteam = stored.steamPath && fs.existsSync(stored.steamPath) ? stored.steamPath : '';
+    const workshopDir = storedWorkshop || derived.workshopDir;
+    const steamPath = storedSteam || derived.steamPath;
+    const acfPath = workshopManifestPath(workshopDir) ||
+      (steamPath ? path.join(steamPath, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`) : '');
+
+    return {
+      steamPath,
+      workshopDir,
+      acfPath,
+      armaExe: storedExe,
+      armaProfilingExe: path.join(path.dirname(storedExe), 'arma3_x64_profiling.exe'),
+      armaDir: path.dirname(storedExe),
+      libraries: steamPath ? [steamPath] : [],
+      suggestedSteamPath: steamPath,
+    };
+  }
+
+  // Если пути не сохранены — ищем в стандартных библиотеках Steam на диске
+  const detected = await detectGamePaths();
+  const armaExe = detected.armaExe;
   const derived = derivePathsFromArmaExe(armaExe);
-  const storedWorkshop = stored.workshopDir && fs.existsSync(stored.workshopDir) ? stored.workshopDir : '';
-  const storedSteam = stored.steamPath && fs.existsSync(stored.steamPath) ? stored.steamPath : '';
-  const workshopDir = storedWorkshop || derived.workshopDir || detected.workshopDir;
-  const steamPath = storedSteam || derived.steamPath || detected.steamPath;
+  const workshopDir = derived.workshopDir || detected.workshopDir;
+  const steamPath = derived.steamPath || detected.steamPath;
   const acfPath = workshopManifestPath(workshopDir) ||
     (steamPath ? path.join(steamPath, 'steamapps', 'workshop', `appworkshop_${ARMA_APP_ID}.acf`) : '');
 
   return {
-    steamPath, workshopDir, acfPath, armaExe,
+    steamPath,
+    workshopDir,
+    acfPath,
+    armaExe,
     armaProfilingExe: armaExe ? path.join(path.dirname(armaExe), 'arma3_x64_profiling.exe') : undefined,
     armaDir: armaExe ? path.dirname(armaExe) : '',
     libraries: detected.libraries,

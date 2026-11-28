@@ -18,6 +18,11 @@ function maskSteam(id) {
 
 export default function AccountCard({ api, account, onRefresh, compact = false }) {
   const [pair, setPair] = useState(null); // { code, url } | { error }
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [account?.steam?.avatarUrl]);
 
   useEffect(
     () =>
@@ -77,7 +82,13 @@ export default function AccountCard({ api, account, onRefresh, compact = false }
   return (
     <div className="panel account">
       <div className="account-head">
-        <div className="avatar">{(steam.personaName || '?').trim().charAt(0).toUpperCase()}</div>
+        <div className="avatar">
+          {steam.avatarUrl && !avatarFailed ? (
+            <img className="avatar-img" src={steam.avatarUrl} alt="" onError={() => setAvatarFailed(true)} />
+          ) : (
+            (steam.personaName || '?').trim().charAt(0).toUpperCase()
+          )}
+        </div>
         <div className="account-id">
           <strong>{steam.personaName || 'Игрок'}</strong>
           <span>

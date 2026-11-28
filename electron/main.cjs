@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { execSync } = require('child_process');
 const Store = require('electron-store');
 const { loadPreset, resolvePresetPath } = require('./preset.cjs');
 const { derivePathsFromArmaExe, validateGamePaths, detectGamePaths } = require('./paths.cjs');
@@ -59,9 +58,9 @@ const store = new Store({
     soundsEnabled: true,
     minimizeOnLaunch: true,
     animationsEnabled: true,
-    // чекер сети Phoenix при запуске лаунчера и безопасные исправления (сброс DNS, hosts, брандмауэр, zapret)
+    // чекер сети запускается только вручную кнопкой в интерфейсе
     reserveProxy: false,
-    netCheckOnStart: true,
+    netCheckOnStart: false,
   },
 });
 // 1.2.4: TeamSpeak перед игрой включён по умолчанию, но electron-store уже записал старое значение по умолчанию (false)
@@ -93,32 +92,30 @@ function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
 }
 
+let activeArmaPid = null;
+
 function isArmaRunning(force = false) {
-  if (!force && Date.now() - armaRunningCache.at < 4000) return armaRunningCache.value;
-  let running = false;
-  try {
-    const out = execSync('tasklist /FO CSV /NH', { encoding: 'utf8', windowsHide: true }).toLowerCase();
-    running = ['arma3_x64.exe', 'arma3_x64_profiling.exe', 'arma3profiling_x64.exe', 'arma3.exe'].some((exe) => out.includes(`"${exe}"`));
-  } catch {}
-  armaRunningCache = { at: Date.now(), value: running };
-  return running;
+  if (!activeArmaPid) return false;
+  return isPidRunning(activeArmaPid);
 }
 
 function isPidRunning(pid) {
   if (!pid) return false;
   try {
-    return execSync(`tasklist /FI "PID eq ${pid}" /NH`, { encoding: 'utf8', windowsHide: true }).includes(String(pid));
+    process.kill(pid, 0);
+    return true;
   } catch {
     return false;
   }
 }
 
 function watchGameProcess(pid) {
+  activeArmaPid = pid;
   if (gameWatchTimer) clearInterval(gameWatchTimer);
   let seenRunning = false;
   const startedAt = Date.now();
   gameWatchTimer = setInterval(() => {
-    const running = isPidRunning(pid) || isArmaRunning(true);
+    const running = isPidRunning(pid);
     if (running && !seenRunning) {
       seenRunning = true;
       send('launch-running');
@@ -126,6 +123,7 @@ function watchGameProcess(pid) {
     if (seenRunning && !running) {
       clearInterval(gameWatchTimer);
       gameWatchTimer = null;
+      activeArmaPid = null;
       send('launch-reset');
       if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
       return;
@@ -133,9 +131,10 @@ function watchGameProcess(pid) {
     if (!seenRunning && Date.now() - startedAt > 120000) {
       clearInterval(gameWatchTimer);
       gameWatchTimer = null;
+      activeArmaPid = null;
       send('launch-reset');
     }
-  }, 4000);
+  }, 3000);
 }
 
 // --- Пути к игре ---
@@ -279,7 +278,7 @@ async function getAccount(force = false) {
   if (!steam) return { steam: null, roles: null };
   const roles = await getMenuRoles(steam.steamId);
   return {
-    steam: { steamId: steam.steamId, personaName: steam.personaName || steam.accountName },
+    steam: { steamId: steam.steamId, personaName: steam.personaName || steam.accountName, avatarUrl: steam.avatarUrl || '' },
     roles,
   };
 }
@@ -340,24 +339,6 @@ function singleInstanceLock() {
   }
   return false;
 }
-// Старая portable-сборка, а лаунчер уже установлен установщиком - открыть установленный (он не распаковывается в %TEMP%)
-function installedLauncher() {
-  if (!process.env.PORTABLE_EXECUTABLE_FILE || process.env.PHX_SELFTEST) return '';
-  const dirs = [
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'PhoenixLauncher'),
-    path.join(process.env.ProgramFiles || '', 'PhoenixLauncher'),
-  ];
-  return dirs.map((d) => path.join(d, 'PhoenixLauncher.exe')).find((p) => fs.existsSync(p)) || '';
-}
-const installedExe = installedLauncher();
-if (installedExe) {
-  const { trySpawn } = require('./safe-spawn.cjs');
-  const started = trySpawn(installedExe, [], { cwd: path.dirname(installedExe), detached: true, stdio: 'ignore' });
-  if (started.child) {
-    started.child.unref();
-    app.exit(0);
-  }
-}
 
 if (!process.env.PHX_SELFTEST && !singleInstanceLock()) {
   app.quit();
@@ -384,10 +365,6 @@ app.whenReady().then(async () => {
   mainWindow.webContents.once('did-finish-load', () => {
     startServerPolling();
     holonet.start();
-    if (store.get('netCheckOnStart') !== false) {
-      // при запуске - только проверка: систему лаунчер меняет лишь по кнопке «Исправить»
-      netcheck.run().catch(() => {});
-    }
   });
   updater = createUpdater({
     appVersion: APP_VERSION,
@@ -605,7 +582,7 @@ ipcMain.handle('menu-pair-start', async () => {
       store.set('menuTokens', { ...(store.get('menuTokens') || {}), [steam.steamId]: pair.token });
       send('pair-status', { status: 'linked' });
       send('account-update', {
-        steam: { steamId: steam.steamId, personaName: steam.personaName || steam.accountName },
+        steam: { steamId: steam.steamId, personaName: steam.personaName || steam.accountName, avatarUrl: steam.avatarUrl || '' },
         roles,
       });
       if (Notification.isSupported()) {
